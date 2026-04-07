@@ -1,4 +1,4 @@
-const CLOUD_FUNCTION_NAME = "quickstartFunctions";
+const USER_CLOUD_FUNCTION_NAME = "userService";
 
 function getCloudEnv() {
   const app = getApp();
@@ -114,7 +114,7 @@ Page({
 
     try {
       const resp = await wx.cloud.callFunction({
-        name: CLOUD_FUNCTION_NAME,
+        name: USER_CLOUD_FUNCTION_NAME,
         data: {
           type: "getCurrentUser",
         },
@@ -152,7 +152,7 @@ Page({
       } else if (errMsg.includes("FunctionName parameter could not be found")) {
         this.showCloudTip(
           "请先上传云函数",
-          "请先上传并部署 cloudfunctions/quickstartFunctions，再返回重试。"
+          "请先上传并部署 cloudfunctions/userService，再返回重试。"
         );
       } else {
         this.showCloudTip("获取当前用户失败", errMsg || "请稍后重试。");
@@ -187,7 +187,7 @@ Page({
 
     try {
       const resp = await wx.cloud.callFunction({
-        name: CLOUD_FUNCTION_NAME,
+        name: USER_CLOUD_FUNCTION_NAME,
         data: {
           type: "initCollections",
         },
@@ -217,7 +217,7 @@ Page({
       } else if (errMsg.includes("FunctionName parameter could not be found")) {
         this.showCloudTip(
           "请先上传云函数",
-          "请先上传并部署 cloudfunctions/quickstartFunctions，再返回重试。"
+          "请先上传并部署 cloudfunctions/userService，再返回重试。"
         );
       } else {
         this.showCloudTip("初始化集合失败", errMsg || "请稍后重试。");

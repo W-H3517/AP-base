@@ -1,196 +1,23 @@
 const crypto = require("crypto");
-const cloud = require("wx-server-sdk");
-
-cloud.init({
-  env: cloud.DYNAMIC_CURRENT_ENV,
-});
-
-const db = cloud.database();
-const USERS_COLLECTION = "users";
-const QUESTIONS_COLLECTION = "questions";
-const QUESTION_TYPE_CHOICE = "choice";
-const CONTENT_SOURCE_TEXT = "text";
-const CONTENT_SOURCE_IMAGE = "image";
-const ENTRY_MODE_SINGLE = "single";
-const ENTRY_MODE_GROUPED = "grouped";
-const OPTION_MODE_PER_OPTION = "per_option";
-const OPTION_MODE_GROUPED_ASSET = "grouped_asset";
-const ADMIN_OPENIDS = (process.env.ADMIN_OPENIDS || "")
-  .split(",")
-  .map((item) => item.trim())
-  .filter(Boolean);
-
-const ok = (data = null) => ({
-  success: true,
-  data,
-  errMsg: "",
-});
-
-const fail = (errMsg) => ({
-  success: false,
-  data: null,
-  errMsg: errMsg instanceof Error ? errMsg.message : String(errMsg),
-});
-
-const getWxContext = () => cloud.getWXContext();
-
-const normalizeRole = (role) => (role === "admin" ? "admin" : "user");
-
-const normalizeString = (value) =>
-  typeof value === "string" ? value.trim() : "";
-
-const normalizeUpperString = (value) => normalizeString(value).toUpperCase();
-
-const ensureCollection = async (collectionName) => {
-  try {
-    await db.createCollection(collectionName);
-    return { created: true };
-  } catch (error) {
-    return { created: false, errMsg: error?.message || String(error) };
-  }
-};
-
-const ensureCollections = async () => {
-  const [usersResult, questionsResult] = await Promise.all([
-    ensureCollection(USERS_COLLECTION),
-    ensureCollection(QUESTIONS_COLLECTION),
-  ]);
-
-  return {
-    success: true,
-    data: {
-      usersCreated: usersResult.created,
-      questionsCreated: questionsResult.created,
-      notes: [
-        "Ensure a unique index on users.openid in the cloud database console.",
-        "Ensure a unique index on questions.questionId in the cloud database console.",
-      ],
-    },
-    errMsg: "",
-  };
-};
-
-const getUserByOpenId = async (openid) => {
-  if (!openid) {
-    return null;
-  }
-
-  try {
-    const resp = await db
-      .collection(USERS_COLLECTION)
-      .where({
-        openid,
-      })
-      .limit(1)
-      .get();
-    return resp.data?.[0] || null;
-  } catch (error) {
-    if ((error?.message || "").includes("collection")) {
-      return null;
-    }
-    throw error;
-  }
-};
-
-const ensureUserRecord = async () => {
-  const wxContext = getWxContext();
-  const openid = wxContext.OPENID;
-  if (!openid) {
-    throw new Error("无法获取当前用户身份");
-  }
-
-  await ensureCollections();
-
-  const existing = await getUserByOpenId(openid);
-  if (existing) {
-    const normalizedRole = normalizeRole(existing.role);
-    if (normalizedRole !== existing.role) {
-      await db.collection(USERS_COLLECTION).doc(existing._id).update({
-        data: {
-          role: normalizedRole,
-          updateTime: Date.now(),
-        },
-      });
-      return {
-        ...existing,
-        role: normalizedRole,
-      };
-    }
-    return existing;
-  }
-
-  const now = Date.now();
-  const role = ADMIN_OPENIDS.includes(openid) ? "admin" : "user";
-
-  try {
-    await db.collection(USERS_COLLECTION).add({
-      data: {
-        openid,
-        role,
-        createTime: now,
-        updateTime: now,
-      },
-    });
-  } catch (error) {
-    const duplicateLike =
-      (error?.message || "").includes("Duplicate") ||
-      (error?.message || "").includes("duplicate");
-    if (!duplicateLike) {
-      throw error;
-    }
-  }
-
-  const created = await getUserByOpenId(openid);
-  if (!created) {
-    throw new Error("用户记录创建失败");
-  }
-
-  return created;
-};
-
-const requireAdmin = async () => {
-  const user = await ensureUserRecord();
-  if (normalizeRole(user.role) !== "admin") {
-    throw new Error("仅管理员可执行此操作");
-  }
-  return user;
-};
-
-const generateQuestionId = async () => {
-  for (let i = 0; i < 8; i += 1) {
-    const candidate = `q_${crypto.randomBytes(16).toString("hex")}`;
-    const existed = await db
-      .collection(QUESTIONS_COLLECTION)
-      .where({
-        questionId: candidate,
-      })
-      .limit(1)
-      .get();
-    if (!existed.data?.length) {
-      return candidate;
-    }
-  }
-
-  throw new Error("题目ID生成失败，请重试");
-};
-
-const generateGroupId = async () => {
-  for (let i = 0; i < 8; i += 1) {
-    const candidate = `g_${crypto.randomBytes(12).toString("hex")}`;
-    const existed = await db
-      .collection(QUESTIONS_COLLECTION)
-      .where({
-        groupId: candidate,
-      })
-      .limit(1)
-      .get();
-    if (!existed.data?.length) {
-      return candidate;
-    }
-  }
-
-  throw new Error("题组ID生成失败，请重试");
-};
+const { db } = require("./db");
+const {
+  QUESTIONS_COLLECTION,
+  QUESTION_TYPE_CHOICE,
+  CONTENT_SOURCE_TEXT,
+  CONTENT_SOURCE_IMAGE,
+  ENTRY_MODE_SINGLE,
+  ENTRY_MODE_GROUPED,
+  OPTION_MODE_PER_OPTION,
+  OPTION_MODE_GROUPED_ASSET,
+} = require("./constants");
+const {
+  ok,
+  fail,
+  normalizeString,
+  normalizeUpperString,
+  sortQuestions,
+} = require("./utils");
+const { ensureUserRecord, requireAdmin, normalizeRole } = require("./userAccess");
 
 const validateSourceType = (sourceType, fieldName) => {
   if (
@@ -206,28 +33,21 @@ const normalizeImageFileIds = (imageFileIds, fieldName) => {
   if (!Array.isArray(imageFileIds)) {
     throw new Error(`${fieldName}.imageFileIds 必须是数组`);
   }
-
   const cleaned = imageFileIds
     .map((item) => normalizeString(item))
     .filter(Boolean);
-
   if (!cleaned.length) {
     throw new Error(`${fieldName}.imageFileIds 不能为空`);
   }
-
   return cleaned;
 };
 
 const normalizeRichStem = (content, fieldName, { allowEmpty = false } = {}) => {
   if (allowEmpty) {
     const text = normalizeString(content?.text);
-    const rawImageFileIds = Array.isArray(content?.imageFileIds)
-      ? content.imageFileIds
+    const imageFileIds = Array.isArray(content?.imageFileIds)
+      ? content.imageFileIds.map((item) => normalizeString(item)).filter(Boolean)
       : [];
-    const imageFileIds = rawImageFileIds
-      .map((item) => normalizeString(item))
-      .filter(Boolean);
-
     if (!text && !imageFileIds.length) {
       return {};
     }
@@ -238,15 +58,15 @@ const normalizeRichStem = (content, fieldName, { allowEmpty = false } = {}) => {
     fieldName,
   );
   const text = normalizeString(content?.text);
-  const imageFileIds = Array.isArray(content?.imageFileIds)
-    ? content.imageFileIds
-    : [];
 
   if (sourceType === CONTENT_SOURCE_TEXT) {
     if (!text) {
       throw new Error(`${fieldName}.text 不能为空`);
     }
-    if (imageFileIds.some((item) => normalizeString(item))) {
+    const imageFileIds = Array.isArray(content?.imageFileIds)
+      ? content.imageFileIds.map((item) => normalizeString(item)).filter(Boolean)
+      : [];
+    if (imageFileIds.length) {
       throw new Error(`${fieldName} 为文本时不能同时传 imageFileIds`);
     }
     return {
@@ -259,7 +79,7 @@ const normalizeRichStem = (content, fieldName, { allowEmpty = false } = {}) => {
   return {
     sourceType,
     text: "",
-    imageFileIds: normalizeImageFileIds(imageFileIds, fieldName),
+    imageFileIds: normalizeImageFileIds(content?.imageFileIds, fieldName),
   };
 };
 
@@ -303,7 +123,6 @@ const normalizeOptionKeys = (keys) => {
 
   const cleaned = keys.map((key) => normalizeUpperString(key));
   const keySet = new Set();
-
   cleaned.forEach((key, index) => {
     if (!key) {
       throw new Error(`options.keys 第 ${index + 1} 项不能为空`);
@@ -313,7 +132,6 @@ const normalizeOptionKeys = (keys) => {
     }
     keySet.add(key);
   });
-
   return cleaned;
 };
 
@@ -355,7 +173,6 @@ const normalizeCorrectOptionKeys = (correctOptionKeys) => {
     }
     keySet.add(key);
   }
-
   return cleaned;
 };
 
@@ -381,21 +198,6 @@ const validateEntryMode = (entryMode) => {
   return normalized;
 };
 
-const normalizeGroupOrder = (groupOrder, { required = false } = {}) => {
-  if (groupOrder === undefined || groupOrder === null || groupOrder === "") {
-    if (required) {
-      throw new Error("groupOrder 不能为空");
-    }
-    return 1;
-  }
-
-  const normalized = Number(groupOrder);
-  if (!Number.isInteger(normalized) || normalized <= 0) {
-    throw new Error("groupOrder 必须是大于 0 的整数");
-  }
-  return normalized;
-};
-
 const normalizeQuestionCore = (payload, { requireQuestionId = false } = {}) => {
   const questionId = normalizeString(payload?.questionId);
   const questionType = normalizeString(payload?.questionType);
@@ -407,7 +209,6 @@ const normalizeQuestionCore = (payload, { requireQuestionId = false } = {}) => {
   if (requireQuestionId && !questionId) {
     throw new Error("questionId 不能为空");
   }
-
   if (questionType !== QUESTION_TYPE_CHOICE) {
     throw new Error("questionType 仅支持 choice");
   }
@@ -427,20 +228,17 @@ const normalizeQuestionCore = (payload, { requireQuestionId = false } = {}) => {
     if (itemKeys.length !== optionKeys.length) {
       throw new Error("options.keys 与 options.items 数量不一致");
     }
-
     for (let i = 0; i < optionKeys.length; i += 1) {
       if (optionKeys[i] !== itemKeys[i]) {
         throw new Error("options.keys 必须与 options.items.key 完全一致且顺序一致");
       }
     }
-
     const groupedAssetImageFileId = normalizeString(
       payload?.options?.groupedAsset?.imageFileId,
     );
     if (groupedAssetImageFileId) {
       throw new Error("per_option 模式下不能传 groupedAsset.imageFileId");
     }
-
     options.items = items;
   }
 
@@ -449,7 +247,6 @@ const normalizeQuestionCore = (payload, { requireQuestionId = false } = {}) => {
     if (Array.isArray(rawItems) && rawItems.length) {
       throw new Error("grouped_asset 模式下 options.items 必须为空数组");
     }
-
     options.groupedAsset = normalizeOptionContent(
       {
         sourceType: CONTENT_SOURCE_IMAGE,
@@ -501,49 +298,57 @@ const normalizeGroupedChildren = (children, sharedStem) => {
 
   return children.map((child, index) => ({
     ...normalizeQuestionCore(child, { requireQuestionId: false }),
+    questionId: normalizeString(child?.questionId),
     entryMode: ENTRY_MODE_GROUPED,
     sharedStem,
     groupOrder: index + 1,
   }));
 };
 
-const getEventPayload = (event) => {
-  if (
-    event &&
-    event.data &&
-    typeof event.data === "object" &&
-    !Array.isArray(event.data)
-  ) {
-    return event.data;
+const generateQuestionId = async () => {
+  for (let i = 0; i < 8; i += 1) {
+    const candidate = `q_${crypto.randomBytes(16).toString("hex")}`;
+    const existed = await db
+      .collection(QUESTIONS_COLLECTION)
+      .where({ questionId: candidate })
+      .limit(1)
+      .get();
+    if (!existed.data?.length) {
+      return candidate;
+    }
   }
+  throw new Error("题目ID生成失败，请重试");
+};
 
-  const payload = {
-    ...(event || {}),
-  };
-  delete payload.type;
-  return payload;
+const generateGroupId = async () => {
+  for (let i = 0; i < 8; i += 1) {
+    const candidate = `g_${crypto.randomBytes(12).toString("hex")}`;
+    const existed = await db
+      .collection(QUESTIONS_COLLECTION)
+      .where({ groupId: candidate })
+      .limit(1)
+      .get();
+    if (!existed.data?.length) {
+      return candidate;
+    }
+  }
+  throw new Error("题组ID生成失败，请重试");
 };
 
 const getQuestionById = async (questionId) => {
   const resp = await db
     .collection(QUESTIONS_COLLECTION)
-    .where({
-      questionId,
-    })
+    .where({ questionId })
     .limit(1)
     .get();
-
   return resp.data?.[0] || null;
 };
 
 const getQuestionsByGroupId = async (groupId) => {
   const resp = await db
     .collection(QUESTIONS_COLLECTION)
-    .where({
-      groupId,
-    })
+    .where({ groupId })
     .get();
-
   return (resp.data || []).sort((left, right) => {
     const leftOrder = Number(left?.groupOrder || 0);
     const rightOrder = Number(right?.groupOrder || 0);
@@ -582,7 +387,7 @@ const stripQuestionByRole = (question, role) => {
           imageFileId: "",
         },
       },
-    groupOrder: normalizeGroupOrder(question.groupOrder),
+    groupOrder: Number(question.groupOrder || 1),
     createTime: question.createTime,
     updateTime: question.updateTime,
   };
@@ -599,46 +404,28 @@ const stripQuestionByRole = (question, role) => {
   return base;
 };
 
-const sortQuestions = (questions) =>
-  [...questions].sort((left, right) => {
-    const leftTime = Number(left?.createTime || 0);
-    const rightTime = Number(right?.createTime || 0);
-    if (leftTime !== rightTime) {
-      return rightTime - leftTime;
-    }
-    const leftOrder = Number(left?.groupOrder || 0);
-    const rightOrder = Number(right?.groupOrder || 0);
-    return leftOrder - rightOrder;
-  });
-
-const getOpenId = async () => {
-  const wxContext = getWxContext();
-  return ok({
-    openid: wxContext.OPENID,
-    appid: wxContext.APPID,
-    unionid: wxContext.UNIONID,
-  });
+const getEventPayload = (event) => {
+  if (
+    event &&
+    event.data &&
+    typeof event.data === "object" &&
+    !Array.isArray(event.data)
+  ) {
+    return event.data;
+  }
+  const payload = { ...(event || {}) };
+  delete payload.type;
+  return payload;
 };
-
-const getCurrentUser = async () => {
-  const user = await ensureUserRecord();
-  return ok({
-    openid: user.openid,
-    role: normalizeRole(user.role),
-    createTime: user.createTime,
-    updateTime: user.updateTime,
-  });
-};
-
-const initCollections = async () => ensureCollections();
 
 const listQuestions = async () => {
   const user = await ensureUserRecord();
   const resp = await db.collection(QUESTIONS_COLLECTION).get();
-  const questions = sortQuestions(resp.data || []).map((question) =>
-    stripQuestionByRole(question, user.role),
+  return ok(
+    sortQuestions(resp.data || []).map((question) =>
+      stripQuestionByRole(question, user.role),
+    ),
   );
-  return ok(questions);
 };
 
 const getQuestionDetail = async (event) => {
@@ -647,12 +434,10 @@ const getQuestionDetail = async (event) => {
   if (!questionId) {
     return fail("questionId 不能为空");
   }
-
   const question = await getQuestionById(questionId);
   if (!question) {
     return fail("题目不存在");
   }
-
   return ok(stripQuestionByRole(question, user.role));
 };
 
@@ -662,12 +447,10 @@ const getQuestionGroupDetail = async (event) => {
   if (!groupId) {
     return fail("groupId 不能为空");
   }
-
   const questions = await getQuestionsByGroupId(groupId);
   if (!questions.length) {
     return fail("题组不存在");
   }
-
   return ok({
     groupId,
     entryMode: ENTRY_MODE_GROUPED,
@@ -709,8 +492,7 @@ const buildSingleQuestionDocument = async (payload, user, existingQuestion = nul
 
 const createQuestion = async (event) => {
   const user = await requireAdmin();
-  const payload = getEventPayload(event);
-  const validated = normalizeSingleQuestionPayload(payload);
+  const validated = normalizeSingleQuestionPayload(getEventPayload(event));
   const now = Date.now();
   const questionId = await generateQuestionId();
 
@@ -733,9 +515,7 @@ const createQuestion = async (event) => {
     },
   });
 
-  return ok({
-    questionId,
-  });
+  return ok({ questionId });
 };
 
 const updateQuestion = async (event) => {
@@ -750,7 +530,6 @@ const updateQuestion = async (event) => {
   if (!existingQuestion) {
     return fail("题目不存在");
   }
-
   if ((existingQuestion.entryMode || ENTRY_MODE_SINGLE) !== ENTRY_MODE_SINGLE) {
     return fail("关联题请使用题组更新接口");
   }
@@ -772,9 +551,7 @@ const updateQuestion = async (event) => {
     },
   });
 
-  return ok({
-    questionId,
-  });
+  return ok({ questionId });
 };
 
 const createQuestionGroup = async (event) => {
@@ -785,33 +562,29 @@ const createQuestionGroup = async (event) => {
   const groupId = await generateGroupId();
   const now = Date.now();
 
-  await Promise.all(
-    children.map(async (child) => {
-      const questionId = await generateQuestionId();
-      await db.collection(QUESTIONS_COLLECTION).add({
-        data: {
-          questionId,
-          groupId,
-          questionType: child.questionType,
-          entryMode: ENTRY_MODE_GROUPED,
-          sharedStem,
-          stem: child.stem,
-          optionMode: child.optionMode,
-          options: child.options,
-          correctOptionKeys: child.correctOptionKeys,
-          groupOrder: child.groupOrder,
-          createTime: now,
-          updateTime: now,
-          createdBy: user.openid,
-          updatedBy: user.openid,
-        },
-      });
-    }),
-  );
+  for (const child of children) {
+    const questionId = await generateQuestionId();
+    await db.collection(QUESTIONS_COLLECTION).add({
+      data: {
+        questionId,
+        groupId,
+        questionType: child.questionType,
+        entryMode: ENTRY_MODE_GROUPED,
+        sharedStem,
+        stem: child.stem,
+        optionMode: child.optionMode,
+        options: child.options,
+        correctOptionKeys: child.correctOptionKeys,
+        groupOrder: child.groupOrder,
+        createTime: now,
+        updateTime: now,
+        createdBy: user.openid,
+        updatedBy: user.openid,
+      },
+    });
+  }
 
-  return ok({
-    groupId,
-  });
+  return ok({ groupId });
 };
 
 const updateQuestionGroup = async (event) => {
@@ -829,41 +602,37 @@ const updateQuestionGroup = async (event) => {
 
   const sharedStem = normalizeRichStem(payload?.sharedStem, "sharedStem");
   const children = normalizeGroupedChildren(payload?.children, sharedStem);
-  const now = Date.now();
-
-  await Promise.all(
-    existingQuestions.map((question) =>
-      db.collection(QUESTIONS_COLLECTION).doc(question._id).remove(),
-    ),
+  const existingById = new Map(
+    existingQuestions.map((question) => [question.questionId, question]),
   );
 
-  await Promise.all(
-    children.map(async (child) => {
-      const questionId = normalizeString(child.questionId) || (await generateQuestionId());
-      await db.collection(QUESTIONS_COLLECTION).add({
-        data: {
-          questionId,
-          groupId,
-          questionType: child.questionType,
-          entryMode: ENTRY_MODE_GROUPED,
-          sharedStem,
-          stem: child.stem,
-          optionMode: child.optionMode,
-          options: child.options,
-          correctOptionKeys: child.correctOptionKeys,
-          groupOrder: child.groupOrder,
-          createTime: now,
-          updateTime: now,
-          createdBy: user.openid,
-          updatedBy: user.openid,
-        },
-      });
-    }),
-  );
+  for (const question of existingQuestions) {
+    await db.collection(QUESTIONS_COLLECTION).doc(question._id).remove();
+  }
 
-  return ok({
-    groupId,
-  });
+  for (const child of children) {
+    const existingQuestion = existingById.get(child.questionId);
+    await db.collection(QUESTIONS_COLLECTION).add({
+      data: {
+        questionId: child.questionId || existingQuestion?.questionId || (await generateQuestionId()),
+        groupId,
+        questionType: child.questionType,
+        entryMode: ENTRY_MODE_GROUPED,
+        sharedStem,
+        stem: child.stem,
+        optionMode: child.optionMode,
+        options: child.options,
+        correctOptionKeys: child.correctOptionKeys,
+        groupOrder: child.groupOrder,
+        createTime: existingQuestion?.createTime || Date.now(),
+        updateTime: Date.now(),
+        createdBy: existingQuestion?.createdBy || user.openid,
+        updatedBy: user.openid,
+      },
+    });
+  }
+
+  return ok({ groupId });
 };
 
 const deleteQuestion = async (event) => {
@@ -872,26 +641,16 @@ const deleteQuestion = async (event) => {
   if (!questionId) {
     return fail("questionId 不能为空");
   }
-
   const existingQuestion = await getQuestionById(questionId);
   if (!existingQuestion) {
     return fail("题目不存在");
   }
-
   await db.collection(QUESTIONS_COLLECTION).doc(existingQuestion._id).remove();
-  return ok({
-    questionId,
-  });
+  return ok({ questionId });
 };
 
 const dispatch = async (event) => {
   switch (event.type) {
-    case "getOpenId":
-      return getOpenId();
-    case "getCurrentUser":
-      return getCurrentUser();
-    case "initCollections":
-      return initCollections();
     case "listQuestions":
       return listQuestions();
     case "getQuestionDetail":
@@ -908,29 +667,11 @@ const dispatch = async (event) => {
       return updateQuestionGroup(event);
     case "deleteQuestion":
       return deleteQuestion(event);
-    case "getMiniProgramCode":
-      return getMiniProgramCode();
     default:
       return fail(`不支持的操作类型：${event.type || "undefined"}`);
   }
 };
 
-const getMiniProgramCode = async () => {
-  const resp = await cloud.openapi.wxacode.get({
-    path: "pages/index/index",
-  });
-  const { buffer } = resp;
-  const upload = await cloud.uploadFile({
-    cloudPath: "code.png",
-    fileContent: buffer,
-  });
-  return ok(upload.fileID);
-};
-
-exports.main = async (event) => {
-  try {
-    return await dispatch(event || {});
-  } catch (error) {
-    return fail(error);
-  }
+module.exports = {
+  dispatch,
 };

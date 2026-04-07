@@ -1,4 +1,5 @@
-const CLOUD_FUNCTION_NAME = "quickstartFunctions";
+const QUESTION_CLOUD_FUNCTION_NAME = "questionService";
+const USER_CLOUD_FUNCTION_NAME = "userService";
 const QUESTION_TYPE = "choice";
 const OPTION_KEY_POOL = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
@@ -129,6 +130,18 @@ function unwrapCloudResult(resp) {
     throw new Error(result.errMsg || "云函数执行失败");
   }
   return result;
+}
+
+function getCloudFunctionNameByType(type) {
+  const userTypes = new Set([
+    "getOpenId",
+    "getCurrentUser",
+    "initCollections",
+    "getMiniProgramCode",
+  ]);
+  return userTypes.has(type)
+    ? USER_CLOUD_FUNCTION_NAME
+    : QUESTION_CLOUD_FUNCTION_NAME;
 }
 
 function normalizeUser(result) {
@@ -427,7 +440,7 @@ Page({
 
   async callQuestionFunction(type, data) {
     const resp = await wx.cloud.callFunction({
-      name: CLOUD_FUNCTION_NAME,
+      name: getCloudFunctionNameByType(type),
       data: {
         type,
         ...(data || {}),

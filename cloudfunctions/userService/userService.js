@@ -1,6 +1,10 @@
 const cloud = require("wx-server-sdk");
 const { db } = require("./db");
-const { USERS_COLLECTION, QUESTIONS_COLLECTION } = require("./constants");
+const {
+  USERS_COLLECTION,
+  QUESTIONS_COLLECTION,
+  PRACTICE_SUBMISSIONS_COLLECTION,
+} = require("./constants");
 const { ok, normalizeString } = require("./utils");
 
 const ADMIN_OPENIDS = (process.env.ADMIN_OPENIDS || "")
@@ -27,6 +31,7 @@ const ensureCollections = async () => {
   await Promise.all([
     ensureCollection(USERS_COLLECTION),
     ensureCollection(QUESTIONS_COLLECTION),
+    ensureCollection(PRACTICE_SUBMISSIONS_COLLECTION),
   ]);
 };
 

@@ -47,6 +47,7 @@
 - 管理员可以访问题目总列表、新增、删除题目和题组
 - 管理员身份由后端根据 `OPENID` 和环境变量 `ADMIN_OPENIDS` 判断
 - 普通用户读取题目时不会返回 `correctOptionKeys`
+- 做题接口对所有角色都不会返回 `correctOptionKeys`
 
 ### 1.4 前端缓存规则
 
@@ -143,7 +144,8 @@
 说明：
 
 - 当前实现会尝试创建 `users` 与 `questions` 集合
-- `usersCreated/questionsCreated` 当前主要作为占位字段保留
+- 当前实现还会尝试创建 `practice_submissions` 集合
+- `usersCreated/questionsCreated/practiceSubmissionsCreated` 当前主要作为占位字段保留
 
 ### 2.4 `getMiniProgramCode`
 

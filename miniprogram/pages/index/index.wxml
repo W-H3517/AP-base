@@ -1,7 +1,7 @@
 <view class="container">
   <view class="title">题库与权限</view>
   <view class="top_tip">
-    页面会先同步当前用户身份。普通用户只浏览题目，管理员会看到题目管理入口。
+    页面会先同步当前用户身份。普通用户进入在线答题，管理员额外看到题目管理入口。
   </view>
 
   <view class="code_box">
@@ -32,21 +32,21 @@
     初始化集合
   </view>
   <view class="btn-full" bindtap="openQuestionBrowser">
-    题目浏览
+    在线答题
   </view>
   <view class="btn-full" wx:if="{{isAdmin}}" bindtap="openQuestionAdmin">
     题目管理
   </view>
   <view class="button_clear" wx:if="{{userLoaded && !isAdmin}}">
-    当前身份为普通用户，只开放题目浏览入口
+    当前身份为普通用户，只开放在线答题入口
   </view>
 
   <view class="power">
     <view class="power_info" data-index="0" bindtap="hideGroup">
-      <view class="power_info_text">
-        <view class="power_info_text_title">题库入口</view>
-        <view class="power_info_text_tip">包含用户同步、集合初始化和题目入口</view>
-      </view>
+        <view class="power_info_text">
+          <view class="power_info_text_title">题库入口</view>
+        <view class="power_info_text_tip">包含用户同步、集合初始化、在线答题和题目管理入口</view>
+        </view>
       <image
         wx:if="{{!entranceList[0].showItem}}"
         class="power_info_more"

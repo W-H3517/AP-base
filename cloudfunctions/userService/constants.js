@@ -1,7 +1,9 @@
 const USERS_COLLECTION = "users";
 const QUESTIONS_COLLECTION = "questions";
+const PRACTICE_SUBMISSIONS_COLLECTION = "practice_submissions";
 
 module.exports = {
   USERS_COLLECTION,
   QUESTIONS_COLLECTION,
+  PRACTICE_SUBMISSIONS_COLLECTION,
 };

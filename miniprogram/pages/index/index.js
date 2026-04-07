@@ -237,7 +237,7 @@ Page({
 
   openQuestionBrowser() {
     wx.navigateTo({
-      url: "/pages/question-bank/index?type=questions",
+      url: "/pages/question-practice/index",
     });
   },
 

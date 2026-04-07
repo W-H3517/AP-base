@@ -3,6 +3,7 @@ const cloud = require("wx-server-sdk");
 const { db } = require("./db");
 const {
   QUESTIONS_COLLECTION,
+  PRACTICE_SUBMISSIONS_COLLECTION,
   QUESTION_TYPE_CHOICE,
   CONTENT_SOURCE_TEXT,
   CONTENT_SOURCE_IMAGE,
@@ -963,6 +964,242 @@ const getQuestionGroupDetail = async (event) => {
   });
 };
 
+const generateSubmissionId = () =>
+  `sub_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
+
+const buildPracticeQuestionItem = (question) => {
+  const sanitized = stripQuestionByRole(question, "user", getSingleQuestionVersion(question));
+  return {
+    questionId: sanitized.questionId,
+    groupId: sanitized.groupId,
+    entryMode: sanitized.entryMode,
+    groupOrder: Number(sanitized.groupOrder || 1),
+    questionType: sanitized.questionType || QUESTION_TYPE_CHOICE,
+    sharedStem:
+      sanitized.sharedStem && Object.keys(sanitized.sharedStem).length
+        ? sanitized.sharedStem
+        : {},
+    stem: sanitized.stem,
+    optionMode: sanitized.optionMode,
+    options: sanitized.options,
+    version: sanitized.version,
+    createTime: sanitized.createTime,
+    updateTime: sanitized.updateTime,
+  };
+};
+
+const buildPracticePaperQuestions = (questions) => {
+  const groupedMap = new Map();
+  const singleQuestions = [];
+
+  sortQuestions(questions || []).forEach((question) => {
+    const entryMode = question?.entryMode || ENTRY_MODE_SINGLE;
+    const groupId = normalizeString(question?.groupId);
+    if (entryMode === ENTRY_MODE_GROUPED && groupId) {
+      if (!groupedMap.has(groupId)) {
+        groupedMap.set(groupId, []);
+      }
+      groupedMap.get(groupId).push(question);
+      return;
+    }
+    singleQuestions.push(question);
+  });
+
+  const groupedQuestions = [];
+  groupedMap.forEach((items) => {
+    const sortedItems = [...items].sort((left, right) => {
+      const leftOrder = Number(left?.groupOrder || 0);
+      const rightOrder = Number(right?.groupOrder || 0);
+      return leftOrder - rightOrder;
+    });
+    sortedItems.forEach((item) => groupedQuestions.push(item));
+  });
+
+  return sortQuestions(singleQuestions.concat(groupedQuestions)).map((question) =>
+    buildPracticeQuestionItem(question),
+  );
+};
+
+const getPracticePaper = async () => {
+  await ensureUserRecord();
+  const resp = await db.collection(QUESTIONS_COLLECTION).get();
+  const questions = buildPracticePaperQuestions(resp.data || []);
+  return ok({
+    paperMeta: {
+      totalCount: questions.length,
+      generatedAt: Date.now(),
+    },
+    questions,
+  });
+};
+
+const normalizeSelectedOptionKeys = (keys, label) => {
+  if (!Array.isArray(keys)) {
+    throw new Error(`${label} 必须是数组`);
+  }
+  const cleaned = keys
+    .map((item) => normalizeUpperString(item))
+    .filter(Boolean);
+  const keySet = new Set();
+  cleaned.forEach((item) => {
+    if (keySet.has(item)) {
+      throw new Error(`${label} 中存在重复选项：${item}`);
+    }
+    keySet.add(item);
+  });
+  return cleaned;
+};
+
+const normalizePracticeAnswers = (answers) => {
+  if (!Array.isArray(answers)) {
+    throw new Error("answers 必须是数组");
+  }
+  const answerMap = new Map();
+
+  answers.forEach((answer, index) => {
+    const questionId = normalizeString(answer?.questionId);
+    if (!questionId) {
+      throw new Error(`answers[${index}].questionId 不能为空`);
+    }
+    answerMap.set(questionId, {
+      questionId,
+      selectedOptionKeys: normalizeSelectedOptionKeys(
+        answer?.selectedOptionKeys || [],
+        `answers[${index}].selectedOptionKeys`,
+      ),
+      answeredAt: Number(answer?.answeredAt || 0) || Date.now(),
+    });
+  });
+
+  return answerMap;
+};
+
+const normalizePaperSnapshotQuestions = (questions) => {
+  if (!Array.isArray(questions) || !questions.length) {
+    throw new Error("paperSnapshot.questions 必须是非空数组");
+  }
+  return questions.map((question, index) => {
+    const questionId = normalizeString(question?.questionId);
+    if (!questionId) {
+      throw new Error(`paperSnapshot.questions[${index}].questionId 不能为空`);
+    }
+    return {
+      questionId,
+      groupId: normalizeString(question?.groupId),
+      entryMode: validateEntryMode(question?.entryMode || ENTRY_MODE_SINGLE),
+      groupOrder: Number(question?.groupOrder || 1),
+      version: normalizeString(question?.version || "0"),
+    };
+  });
+};
+
+const isSameOptionKeySet = (left, right) => {
+  if (left.length !== right.length) {
+    return false;
+  }
+  const leftSorted = [...left].sort();
+  const rightSorted = [...right].sort();
+  for (let i = 0; i < leftSorted.length; i += 1) {
+    if (leftSorted[i] !== rightSorted[i]) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const submitPracticePaper = async (event) => {
+  const user = await ensureUserRecord();
+  const payload = getEventPayload(event);
+  const snapshotQuestions = normalizePaperSnapshotQuestions(
+    payload?.paperSnapshot?.questions,
+  );
+  const answerMap = normalizePracticeAnswers(payload?.answers || []);
+  const now = Date.now();
+  const judgeQuestionResults = [];
+  let answeredCount = 0;
+  let correctCount = 0;
+
+  for (const snapshotQuestion of snapshotQuestions) {
+    const latestQuestion = await getQuestionById(snapshotQuestion.questionId);
+    const answer = answerMap.get(snapshotQuestion.questionId) || {
+      questionId: snapshotQuestion.questionId,
+      selectedOptionKeys: [],
+      answeredAt: 0,
+    };
+
+    const selectedOptionKeys = answer.selectedOptionKeys;
+    const answered = selectedOptionKeys.length > 0;
+    if (answered) {
+      answeredCount += 1;
+    }
+
+    const currentVersion = latestQuestion
+      ? getSingleQuestionVersion(latestQuestion)
+      : normalizeString(snapshotQuestion.version || "0");
+    const versionChanged = currentVersion !== normalizeString(snapshotQuestion.version || "0");
+    const correctOptionKeys = Array.isArray(latestQuestion?.correctOptionKeys)
+      ? latestQuestion.correctOptionKeys.map((item) => normalizeUpperString(item)).filter(Boolean)
+      : [];
+    const isCorrect =
+      !!latestQuestion &&
+      answered &&
+      isSameOptionKeySet(selectedOptionKeys, correctOptionKeys);
+
+    if (isCorrect) {
+      correctCount += 1;
+    }
+
+    judgeQuestionResults.push({
+      questionId: snapshotQuestion.questionId,
+      isCorrect,
+      versionChanged,
+      questionMissing: !latestQuestion,
+    });
+  }
+
+  const submissionId = generateSubmissionId();
+  const totalCount = snapshotQuestions.length;
+  const score = totalCount ? Number(((correctCount / totalCount) * 100).toFixed(2)) : 0;
+
+  await db.collection(PRACTICE_SUBMISSIONS_COLLECTION).add({
+    data: {
+      submissionId,
+      openid: user.openid,
+      role: normalizeRole(user.role),
+      paperSnapshot: {
+        totalCount,
+        questions: snapshotQuestions,
+      },
+      answers: snapshotQuestions.map((question) => {
+        const answer = answerMap.get(question.questionId);
+        return {
+          questionId: question.questionId,
+          selectedOptionKeys: answer ? answer.selectedOptionKeys : [],
+          answeredAt: answer ? answer.answeredAt : 0,
+        };
+      }),
+      judgeResult: {
+        totalCount,
+        answeredCount,
+        correctCount,
+        score,
+        questionResults: judgeQuestionResults,
+      },
+      createTime: now,
+      updateTime: now,
+    },
+  });
+
+  return ok({
+    submissionId,
+    totalCount,
+    answeredCount,
+    correctCount,
+    score,
+    submittedAt: now,
+  });
+};
+
 const buildSingleQuestionDocument = async (payload, user, existingQuestion = null) => {
   const mergedPayload = existingQuestion
     ? {
@@ -1134,6 +1371,10 @@ const dispatch = async (event) => {
       return getQuestionDetail(event);
     case "getQuestionGroupDetail":
       return getQuestionGroupDetail(event);
+    case "getPracticePaper":
+      return getPracticePaper(event);
+    case "submitPracticePaper":
+      return submitPracticePaper(event);
     case "createQuestion":
       return createQuestion(event);
     case "updateQuestion":

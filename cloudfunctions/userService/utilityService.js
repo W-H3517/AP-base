@@ -7,9 +7,12 @@ const initCollections = async () => {
   return ok({
     usersCreated: false,
     questionsCreated: false,
+    practiceSubmissionsCreated: false,
     notes: [
       "Ensure a unique index on users.openid in the cloud database console.",
       "Ensure a unique index on questions.questionId in the cloud database console.",
+      "Ensure a unique index on practice_submissions.submissionId in the cloud database console.",
+      "Ensure an index on practice_submissions.openid in the cloud database console.",
     ],
   });
 };

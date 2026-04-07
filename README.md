@@ -6,7 +6,7 @@
 - 单题录入与关联题录入
 - 文本题干、图片题干、多图题干
 - 独立选项模式与大图选项模式
-- 题目浏览、详情查看、管理员新增/编辑/删除
+- 在线答题、交卷判题、管理员新增/编辑/删除
 
 ## 当前目录说明
 
@@ -18,6 +18,8 @@
   - 首页，负责同步当前用户、初始化集合、进入题库页面
 - [miniprogram/pages/question-bank](D:/CP/AP-MiniProgram/miniprogram/pages/question-bank)
   - 题库主页面，负责题目列表、详情、单题编辑、关联题编辑
+- [miniprogram/pages/question-practice](D:/CP/AP-MiniProgram/miniprogram/pages/question-practice)
+  - 在线答题页面，负责逐题展示、前后题预加载、作答和交卷
 - [miniprogram/components/cloudTipModal](D:/CP/AP-MiniProgram/miniprogram/components/cloudTipModal)
   - 通用提示弹窗组件
 
@@ -37,6 +39,8 @@
 - `listQuestions`
 - `getQuestionDetail`
 - `getQuestionGroupDetail`
+- `getPracticePaper`
+- `submitPracticePaper`
 - `createQuestion`
 - `updateQuestion`
 - `createQuestionGroup`
@@ -81,11 +85,17 @@
 
 - `users`
 - `questions`
+- `practice_submissions`
 
 建议在云开发控制台中额外配置唯一索引：
 
 - `users.openid`
 - `questions.questionId`
+- `practice_submissions.submissionId`
+
+并为以下字段增加普通索引：
+
+- `practice_submissions.openid`
 
 ## 当前状态说明
 

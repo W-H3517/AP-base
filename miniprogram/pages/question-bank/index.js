@@ -1987,6 +1987,7 @@ Page({
     }
     const payload = clone(validation.data);
 
+    let loadingVisible = true;
     wx.showLoading({
       title: "保存中...",
     });
@@ -2016,7 +2017,11 @@ Page({
         }
       }
 
-      wx.hideLoading();
+      if (loadingVisible) {
+        wx.hideLoading();
+        loadingVisible = false;
+      }
+
       wx.showToast({
         title: "保存成功",
         icon: "success",
@@ -2034,7 +2039,10 @@ Page({
         this.showCloudTip("保存题目失败", errMsg);
       }
     } finally {
-      wx.hideLoading();
+      if (loadingVisible) {
+        wx.hideLoading();
+        loadingVisible = false;
+      }
       this.setData({
         savingQuestion: false,
       });

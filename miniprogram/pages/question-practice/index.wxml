@@ -2,8 +2,10 @@
   <view class="hero-card">
     <view class="hero-top">
       <view>
-        <view class="hero-title">在线答题</view>
-        <view class="hero-subtitle">一次一题，切题前后自动预加载，保持流畅作答体验。</view>
+        <view class="hero-title">{{mode === 'review' ? '交卷回顾' : '在线答题'}}</view>
+        <view class="hero-subtitle">
+          {{mode === 'review' ? '当前页面已切换为只读回顾模式，逐题查看你的作答与对错标记。' : '一次一题，切题前后自动预加载，让答题过程更顺滑。'}}
+        </view>
       </view>
       <view class="role-pill">{{currentUser.role || '未同步'}}</view>
     </view>
@@ -17,27 +19,36 @@
         <view class="hero-stat-label">已缓存题目</view>
       </view>
       <view class="hero-stat">
-        <view class="hero-stat-value">{{currentQuestion ? currentSelectedOptionKeys.length : 0}}</view>
-        <view class="hero-stat-label">当前已选</view>
+        <view class="hero-stat-value">{{mode === 'review' ? submissionSummary.correctCount : currentSelectedOptionKeys.length}}</view>
+        <view class="hero-stat-label">{{mode === 'review' ? '答对数量' : '当前已选'}}</view>
       </view>
     </view>
   </view>
 
   <view class="session-card">
-    <view class="session-title">当前会话</view>
+    <view class="session-title">{{mode === 'review' ? '提交摘要' : '当前会话'}}</view>
     <view class="session-row">
       <view class="session-label">OpenID</view>
       <view class="session-value">{{currentUser.openid || '待同步'}}</view>
     </view>
-    <view class="session-row">
+    <view class="session-row" wx:if="{{mode === 'answering'}}">
       <view class="session-label">预加载策略</view>
       <view class="session-value">当前题 + 前后各一道题</view>
+    </view>
+    <view class="session-row" wx:if="{{mode === 'review' && submissionSummary}}">
+      <view class="session-label">提交时间</view>
+      <view class="session-value">{{submissionSummary.submittedAtText}}</view>
+    </view>
+    <view class="session-row" wx:if="{{mode === 'review' && submissionSummary}}">
+      <view class="session-label">提交编号</view>
+      <view class="session-value">{{submissionSummary.submissionId}}</view>
     </view>
   </view>
 
   <view class="toolbar">
     <button class="toolbar-btn toolbar-btn-secondary" bindtap="refreshCurrentUser" loading="{{loadingUser}}">刷新用户</button>
-    <button class="toolbar-btn" bindtap="refreshPaper" loading="{{loadingPaper}}">刷新试卷</button>
+    <button class="toolbar-btn" wx:if="{{mode === 'answering'}}" bindtap="refreshPaper" loading="{{loadingPaper}}">刷新试卷</button>
+    <button class="toolbar-btn" wx:if="{{mode === 'review'}}" bindtap="openPracticeHistory">查看做题记录</button>
   </view>
 
   <view class="loading-state" wx:if="{{loadingPaper}}">
@@ -48,8 +59,8 @@
     当前还没有可作答题目，请先由管理员录入题目。
   </view>
 
-  <view class="result-card" wx:if="{{showResultCard && submissionSummary}}">
-    <view class="result-title">交卷完成</view>
+  <view class="result-card" wx:if="{{mode === 'review' && submissionSummary}}">
+    <view class="result-title">本次结果</view>
     <view class="result-grid">
       <view class="result-item">
         <view class="result-value">{{submissionSummary.totalCount}}</view>
@@ -68,7 +79,6 @@
         <view class="result-label">得分</view>
       </view>
     </view>
-    <view class="result-meta">提交编号：{{submissionSummary.submissionId}}</view>
   </view>
 
   <view class="question-card" wx:if="{{currentQuestion}}">
@@ -77,6 +87,8 @@
       <view class="question-tag" wx:if="{{currentQuestion.entryMode === 'grouped'}}">题组第 {{currentQuestion.groupOrder}} 题</view>
       <view class="question-tag" wx:if="{{currentQuestion.optionMode === 'grouped_asset'}}">大图选项</view>
       <view class="question-tag" wx:if="{{currentQuestion.optionMode === 'per_option'}}">独立选项</view>
+      <view class="question-status-tag question-status-tag-correct" wx:if="{{mode === 'review' && currentQuestion.reviewResult && currentQuestion.reviewResult.isCorrect}}">答对</view>
+      <view class="question-status-tag question-status-tag-wrong" wx:if="{{mode === 'review' && currentQuestion.reviewResult && !currentQuestion.reviewResult.isCorrect}}">答错</view>
     </view>
 
     <view class="section-title" wx:if="{{currentQuestion.sharedStemVisible}}">公共题干</view>
@@ -111,12 +123,16 @@
       ></image>
     </view>
 
-    <view class="section-title">作答区</view>
-    <view class="answer-hint">支持多选；当前题切换时会保留你的作答。</view>
+    <view class="section-title">{{currentQuestion.modeTitle}}</view>
+    <view class="answer-hint">{{currentQuestion.modeTip}}</view>
+    <view class="answer-summary" wx:if="{{mode === 'review'}}">
+      <text class="answer-summary-label">我的答案</text>
+      <text class="answer-summary-value">{{currentQuestion.selectedOptionKeysText}}</text>
+    </view>
 
     <view wx:if="{{currentQuestion.optionMode === 'per_option'}}" class="option-list">
       <view
-        class="option-card {{item.selected ? 'option-card-selected' : ''}}"
+        class="option-card {{item.selected ? 'option-card-selected' : ''}} {{mode === 'review' ? 'option-card-review' : ''}}"
         wx:for="{{currentQuestion.options.items}}"
         wx:key="key"
         wx:for-item="item"
@@ -125,7 +141,7 @@
       >
         <view class="option-top">
           <view class="option-key">{{item.key}}</view>
-          <view class="option-state">{{item.selected ? '已选' : '未选'}}</view>
+          <view class="option-state">{{mode === 'review' ? item.selectionLabel : (item.selected ? '已选' : '未选')}}</view>
         </view>
         <view wx:if="{{item.sourceType === 'text'}}" class="option-text">{{item.text}}</view>
         <image
@@ -150,13 +166,13 @@
       ></image>
       <view class="chip-list">
         <view
-          class="chip {{item.selected ? 'chip-selected' : ''}}"
+          class="chip {{item.selected ? 'chip-selected' : ''}} {{mode === 'review' ? 'chip-review' : ''}}"
           wx:for="{{currentQuestion.optionKeysForDisplay}}"
           wx:key="key"
           bindtap="toggleOptionSelection"
           data-key="{{item.key}}"
         >
-          {{item.key}}
+          {{mode === 'review' && item.selected ? item.key + ' · 我的答案' : item.key}}
         </view>
       </view>
     </view>
@@ -166,7 +182,7 @@
       <button class="nav-btn nav-btn-primary" bindtap="goToNextQuestion" disabled="{{!hasNext}}">下一题</button>
     </view>
 
-    <button class="submit-btn" bindtap="submitPaper" loading="{{submitting}}">交卷</button>
+    <button class="submit-btn" wx:if="{{mode === 'answering'}}" bindtap="submitPaper" loading="{{submitting}}">交卷</button>
   </view>
 
   <cloud-tip-modal

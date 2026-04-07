@@ -1,10 +1,36 @@
 <view class="container">
   <view class="title">题库与权限</view>
   <view class="top_tip">
-    页面会先同步当前用户身份。普通用户进入在线答题，管理员额外看到题目管理入口。
+    页面会先同步当前用户身份。普通用户可进入在线答题和做题记录，管理员额外看到题目管理入口。
   </view>
 
-  <view class="code_box">
+  <view class="hero-card">
+    <view class="hero-title-row">
+      <view>
+        <view class="title">题库与权限</view>
+        <view class="top_tip hero-tip">
+          在这里进入在线答题、回顾历史成绩，并管理题库内容。
+        </view>
+      </view>
+      <view class="hero-role">{{currentUser.role ? currentUser.role : '加载中'}}</view>
+    </view>
+    <view class="hero-actions">
+      <view class="action-card action-card-primary" bindtap="openQuestionBrowser">
+        <view class="action-card-title">在线答题</view>
+        <view class="action-card-tip">逐题作答，交卷后立即进入回顾模式</view>
+      </view>
+      <view class="action-card" bindtap="openPracticeHistory">
+        <view class="action-card-title">做题记录</view>
+        <view class="action-card-tip">查看历史提交时间、分数摘要和逐题详情</view>
+      </view>
+      <view class="action-card action-card-admin" wx:if="{{isAdmin}}" bindtap="openQuestionAdmin">
+        <view class="action-card-title">题目管理</view>
+        <view class="action-card-tip">管理员维护题目、题组与资源内容</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="code_box code_box-elevated">
     <view class="code_box_title">当前用户</view>
     <view class="code_box_record">
       <view class="code_box_record_title" style="width: 30%;">身份</view>
@@ -31,21 +57,21 @@
   <view class="btn-full" bindtap="initCollections" loading="{{loadingAction}}">
     初始化集合
   </view>
-  <view class="btn-full" bindtap="openQuestionBrowser">
-    在线答题
+  <view class="btn-full btn-secondary" bindtap="openPracticeHistory">
+    做题记录
   </view>
   <view class="btn-full" wx:if="{{isAdmin}}" bindtap="openQuestionAdmin">
     题目管理
   </view>
   <view class="button_clear" wx:if="{{userLoaded && !isAdmin}}">
-    当前身份为普通用户，只开放在线答题入口
+    当前身份为普通用户，可使用在线答题和做题记录功能
   </view>
 
   <view class="power">
     <view class="power_info" data-index="0" bindtap="hideGroup">
         <view class="power_info_text">
           <view class="power_info_text_title">题库入口</view>
-        <view class="power_info_text_tip">包含用户同步、集合初始化、在线答题和题目管理入口</view>
+        <view class="power_info_text_tip">包含用户同步、集合初始化、在线答题、做题记录和题目管理入口</view>
         </view>
       <image
         wx:if="{{!entranceList[0].showItem}}"

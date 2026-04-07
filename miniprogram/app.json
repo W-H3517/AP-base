@@ -2,7 +2,9 @@
   "pages": [
     "pages/index/index",
     "pages/question-bank/index",
-    "pages/question-practice/index"
+    "pages/question-practice/index",
+    "pages/practice-history/index",
+    "pages/practice-history-detail/index"
   ],
   "window": {
     "backgroundColor": "#F6F6F6",

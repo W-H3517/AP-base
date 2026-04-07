@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "记录详情",
+  "usingComponents": {
+    "cloud-tip-modal": "/components/cloudTipModal/index"
+  }
+}

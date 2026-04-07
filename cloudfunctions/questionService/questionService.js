@@ -375,6 +375,15 @@ const getQuestionsByGroupId = async (groupId) => {
   });
 };
 
+const getPracticeSubmissionById = async (submissionId, openid) => {
+  const resp = await db
+    .collection(PRACTICE_SUBMISSIONS_COLLECTION)
+    .where({ submissionId, openid })
+    .limit(1)
+    .get();
+  return resp.data?.[0] || null;
+};
+
 const getSingleQuestionVersion = (question) =>
   String(Number(question?.updateTime || 0));
 
@@ -988,6 +997,22 @@ const buildPracticeQuestionItem = (question) => {
   };
 };
 
+const buildPracticeSubmissionQuestionSnapshot = (question) => ({
+  questionId: question.questionId,
+  groupId: question.groupId,
+  entryMode: question.entryMode,
+  groupOrder: Number(question.groupOrder || 1),
+  questionType: question.questionType || QUESTION_TYPE_CHOICE,
+  sharedStem:
+    question.sharedStem && Object.keys(question.sharedStem).length
+      ? cloneJson(question.sharedStem)
+      : {},
+  stem: cloneJson(question.stem || {}),
+  optionMode: question.optionMode,
+  options: cloneJson(question.options || {}),
+  version: question.version,
+});
+
 const buildPracticePaperQuestions = (questions) => {
   const groupedMap = new Map();
   const singleQuestions = [];
@@ -1116,6 +1141,7 @@ const submitPracticePaper = async (event) => {
   const answerMap = normalizePracticeAnswers(payload?.answers || []);
   const now = Date.now();
   const judgeQuestionResults = [];
+  const questionSnapshots = [];
   let answeredCount = 0;
   let correctCount = 0;
 
@@ -1149,6 +1175,30 @@ const submitPracticePaper = async (event) => {
       correctCount += 1;
     }
 
+    questionSnapshots.push(
+      latestQuestion
+        ? buildPracticeSubmissionQuestionSnapshot(buildPracticeQuestionItem(latestQuestion))
+        : {
+            questionId: snapshotQuestion.questionId,
+            groupId: snapshotQuestion.groupId,
+            entryMode: snapshotQuestion.entryMode,
+            groupOrder: Number(snapshotQuestion.groupOrder || 1),
+            questionType: QUESTION_TYPE_CHOICE,
+            sharedStem: {},
+            stem: {},
+            optionMode: OPTION_MODE_PER_OPTION,
+            options: {
+              keys: [],
+              items: [],
+              groupedAsset: {
+                sourceType: CONTENT_SOURCE_IMAGE,
+                imageFileId: "",
+              },
+            },
+            version: normalizeString(snapshotQuestion.version || "0"),
+          },
+    );
+
     judgeQuestionResults.push({
       questionId: snapshotQuestion.questionId,
       isCorrect,
@@ -1170,6 +1220,7 @@ const submitPracticePaper = async (event) => {
         totalCount,
         questions: snapshotQuestions,
       },
+      questionSnapshots,
       answers: snapshotQuestions.map((question) => {
         const answer = answerMap.get(question.questionId);
         return {
@@ -1197,6 +1248,77 @@ const submitPracticePaper = async (event) => {
     correctCount,
     score,
     submittedAt: now,
+    questionResults: judgeQuestionResults.map((item) => ({
+      questionId: item.questionId,
+      isCorrect: !!item.isCorrect,
+      versionChanged: !!item.versionChanged,
+    })),
+  });
+};
+
+const listPracticeSubmissions = async () => {
+  const user = await ensureUserRecord();
+  const resp = await db
+    .collection(PRACTICE_SUBMISSIONS_COLLECTION)
+    .where({ openid: user.openid })
+    .get();
+
+  const list = (resp.data || [])
+    .map((item) => {
+      const judgeResult = item?.judgeResult || {};
+      return {
+        submissionId: item.submissionId || "",
+        totalCount: Number(judgeResult.totalCount || item?.paperSnapshot?.totalCount || 0),
+        answeredCount: Number(judgeResult.answeredCount || 0),
+        correctCount: Number(judgeResult.correctCount || 0),
+        score: Number(judgeResult.score || 0),
+        submittedAt: Number(item.createTime || 0),
+      };
+    })
+    .sort((left, right) => right.submittedAt - left.submittedAt);
+
+  return ok({
+    list,
+  });
+};
+
+const getPracticeSubmissionDetail = async (event) => {
+  const user = await ensureUserRecord();
+  const submissionId = normalizeString(event?.data?.submissionId || event?.submissionId);
+  if (!submissionId) {
+    return fail("submissionId 不能为空");
+  }
+
+  const record = await getPracticeSubmissionById(submissionId, user.openid);
+  if (!record) {
+    return fail("做题记录不存在");
+  }
+
+  const judgeResult = record?.judgeResult || {};
+  return ok({
+    submissionId: record.submissionId || "",
+    summary: {
+      totalCount: Number(judgeResult.totalCount || record?.paperSnapshot?.totalCount || 0),
+      answeredCount: Number(judgeResult.answeredCount || 0),
+      correctCount: Number(judgeResult.correctCount || 0),
+      score: Number(judgeResult.score || 0),
+      submittedAt: Number(record.createTime || 0),
+    },
+    paperSnapshot: cloneJson(record.paperSnapshot || { totalCount: 0, questions: [] }),
+    answers: cloneJson(record.answers || []),
+    judgeResult: {
+      totalCount: Number(judgeResult.totalCount || 0),
+      answeredCount: Number(judgeResult.answeredCount || 0),
+      correctCount: Number(judgeResult.correctCount || 0),
+      score: Number(judgeResult.score || 0),
+      questionResults: (judgeResult.questionResults || []).map((item) => ({
+        questionId: normalizeString(item?.questionId),
+        isCorrect: !!item?.isCorrect,
+        versionChanged: !!item?.versionChanged,
+        questionMissing: !!item?.questionMissing,
+      })),
+    },
+    questions: cloneJson(record.questionSnapshots || []),
   });
 };
 
@@ -1375,6 +1497,10 @@ const dispatch = async (event) => {
       return getPracticePaper(event);
     case "submitPracticePaper":
       return submitPracticePaper(event);
+    case "listPracticeSubmissions":
+      return listPracticeSubmissions(event);
+    case "getPracticeSubmissionDetail":
+      return getPracticeSubmissionDetail(event);
     case "createQuestion":
       return createQuestion(event);
     case "updateQuestion":

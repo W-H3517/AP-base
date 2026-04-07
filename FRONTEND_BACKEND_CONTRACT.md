@@ -48,6 +48,7 @@
 - 管理员身份由后端根据 `OPENID` 和环境变量 `ADMIN_OPENIDS` 判断
 - 普通用户读取题目时不会返回 `correctOptionKeys`
 - 做题接口对所有角色都不会返回 `correctOptionKeys`
+- 做题记录详情接口也不会返回 `correctOptionKeys`
 
 ### 1.4 前端缓存规则
 

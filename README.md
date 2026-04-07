@@ -20,6 +20,10 @@
   - 题库主页面，负责题目列表、详情、单题编辑、关联题编辑
 - [miniprogram/pages/question-practice](D:/CP/AP-MiniProgram/miniprogram/pages/question-practice)
   - 在线答题页面，负责逐题展示、前后题预加载、作答和交卷
+- [miniprogram/pages/practice-history](D:/CP/AP-MiniProgram/miniprogram/pages/practice-history)
+  - 做题记录列表页，展示提交时间与分数摘要
+- [miniprogram/pages/practice-history-detail](D:/CP/AP-MiniProgram/miniprogram/pages/practice-history-detail)
+  - 做题记录详情页，回顾每题题面、我的作答与对错标记
 - [miniprogram/components/cloudTipModal](D:/CP/AP-MiniProgram/miniprogram/components/cloudTipModal)
   - 通用提示弹窗组件
 
@@ -41,6 +45,8 @@
 - `getQuestionGroupDetail`
 - `getPracticePaper`
 - `submitPracticePaper`
+- `listPracticeSubmissions`
+- `getPracticeSubmissionDetail`
 - `createQuestion`
 - `updateQuestion`
 - `createQuestionGroup`

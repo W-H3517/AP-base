@@ -1,8 +1,11 @@
 /**index.wxss**/
 
 page {
-  padding-top: 54rpx;
-  background-color: #f6f6f6;
+  padding-top: 36rpx;
+  background:
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.14), transparent 26%),
+    radial-gradient(circle at top left, rgba(22, 163, 74, 0.16), transparent 28%),
+    linear-gradient(180deg, #f8fbff 0%, #f4f8f6 100%);
   padding-bottom: 60rpx;
 }
 
@@ -12,10 +15,10 @@ page {
 
 .title {
   font-family: PingFang SC;
-  font-weight: 500;
-  color: #000000;
+  font-weight: 700;
+  color: #0f172a;
   font-size: 44rpx;
-  margin-bottom: 40rpx;
+  margin-bottom: 12rpx;
 }
 .function_title {
   font-family: PingFang SC;
@@ -31,8 +34,81 @@ page {
   font-size: 28rpx;
   font-family: PingFang SC;
   font-weight: 400;
-  color: #888888;
+  color: #64748b;
   margin-bottom: 28rpx;
+}
+
+.hero-card {
+  width: 90%;
+  margin: 0 auto 24rpx;
+  padding: 30rpx;
+  border-radius: 28rpx;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 24rpx 60rpx rgba(15, 23, 42, 0.08);
+  box-sizing: border-box;
+}
+
+.hero-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20rpx;
+}
+
+.hero-tip {
+  margin-bottom: 0;
+}
+
+.hero-role {
+  flex-shrink: 0;
+  padding: 12rpx 22rpx;
+  border-radius: 999rpx;
+  background: linear-gradient(135deg, #16a34a, #2563eb);
+  color: #fff;
+  font-size: 24rpx;
+}
+
+.hero-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16rpx;
+  margin-top: 24rpx;
+}
+
+.action-card {
+  min-height: 160rpx;
+  padding: 24rpx;
+  border-radius: 24rpx;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  border: 1rpx solid rgba(37, 99, 235, 0.14);
+  box-sizing: border-box;
+}
+
+.action-card-primary {
+  background: linear-gradient(135deg, #16a34a, #2563eb);
+}
+
+.action-card-primary .action-card-title,
+.action-card-primary .action-card-tip {
+  color: #ffffff;
+}
+
+.action-card-admin {
+  background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+  border-color: rgba(249, 115, 22, 0.18);
+}
+
+.action-card-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.action-card-tip {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  line-height: 1.7;
+  color: #64748b;
 }
 
 .examples_container {
@@ -56,10 +132,11 @@ page {
 
 .power {
   margin-top: 30rpx;
-  border-radius: 5px;
-  background-color: white;
-  width: 93%;
+  border-radius: 24rpx;
+  background-color: rgba(255, 255, 255, 0.96);
+  width: 90%;
   padding-bottom: 1rpx;
+  box-shadow: 0 24rpx 60rpx rgba(15, 23, 42, 0.08);
 }
 
 .power_info {
@@ -144,10 +221,14 @@ page {
 .code_box {
   width: 90%;
   margin: 0 auto 24rpx;
-  background-color: #fff;
-  border-radius: 12rpx;
+  background-color: rgba(255, 255, 255, 0.96);
+  border-radius: 24rpx;
   padding: 24rpx;
   box-sizing: border-box;
+}
+
+.code_box-elevated {
+  box-shadow: 0 24rpx 60rpx rgba(15, 23, 42, 0.08);
 }
 
 .code_box_title {
@@ -182,8 +263,14 @@ page {
   line-height: 80rpx;
   text-align: center;
   color: #fff;
-  background-color: #1aad19;
-  border-radius: 10rpx;
+  background: linear-gradient(135deg, #16a34a, #2563eb);
+  border-radius: 18rpx;
+}
+
+.btn-secondary {
+  background: #ffffff;
+  color: #1e293b;
+  border: 1rpx solid rgba(37, 99, 235, 0.18);
 }
 
 .button_clear {
@@ -197,4 +284,14 @@ page {
   border-radius: 10rpx;
   padding: 20rpx;
   box-sizing: border-box;
+}
+
+@media (max-width: 480px) {
+  .hero-title-row {
+    flex-direction: column;
+  }
+
+  .hero-actions {
+    grid-template-columns: 1fr;
+  }
 }

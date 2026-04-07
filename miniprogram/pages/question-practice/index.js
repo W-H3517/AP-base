@@ -30,6 +30,19 @@ function getErrorMessage(error) {
   return (error && (error.errMsg || error.message)) || "请求失败";
 }
 
+function formatTime(value) {
+  const date = new Date(Number(value || 0));
+  if (Number.isNaN(date.getTime()) || !Number(value)) {
+    return "未知";
+  }
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const hh = String(date.getHours()).padStart(2, "0");
+  const min = String(date.getMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+}
+
 function normalizeRichContent(content) {
   const source = isPlainObject(content) ? content : {};
   const sourceType = source.sourceType === "image" ? "image" : "text";
@@ -100,13 +113,6 @@ function hasRichContent(content) {
   return !!normalized.text || normalized.imageFileIds.length > 0;
 }
 
-function formatProgress(index, total) {
-  if (!total) {
-    return "0 / 0";
-  }
-  return `${index + 1} / ${total}`;
-}
-
 function normalizeSelectedOptionKeys(keys) {
   const keySet = new Set();
   normalizeArray(keys).forEach((item) => {
@@ -118,6 +124,21 @@ function normalizeSelectedOptionKeys(keys) {
   return Array.from(keySet);
 }
 
+function buildQuestionResultMap(questionResults) {
+  const result = {};
+  normalizeArray(questionResults).forEach((item) => {
+    const questionId = normalizeString(item && item.questionId);
+    if (!questionId) {
+      return;
+    }
+    result[questionId] = {
+      isCorrect: !!(item && item.isCorrect),
+      versionChanged: !!(item && item.versionChanged),
+    };
+  });
+  return result;
+}
+
 Page({
   data: {
     showTip: false,
@@ -126,6 +147,7 @@ Page({
     loadingUser: false,
     loadingPaper: false,
     submitting: false,
+    mode: "answering",
     currentUser: {
       openid: "",
       role: "",
@@ -143,7 +165,8 @@ Page({
     loadedQuestionIds: [],
     hasPrevious: false,
     hasNext: false,
-    showResultCard: false,
+    reviewQuestionResultsMap: {},
+    activeSubmissionId: "",
     submissionSummary: null,
   },
 
@@ -176,7 +199,7 @@ Page({
     });
   },
 
-  async callFunction(name, data, cloudName) {
+  async callFunction(cloudName, data) {
     const resp = await wx.cloud.callFunction({
       name: cloudName,
       data,
@@ -200,7 +223,7 @@ Page({
 
     try {
       const [userResult] = await Promise.all([
-        this.callFunction(USER_CLOUD_FUNCTION_NAME, { type: "getCurrentUser" }, USER_CLOUD_FUNCTION_NAME),
+        this.callFunction(USER_CLOUD_FUNCTION_NAME, { type: "getCurrentUser" }),
         this.loadPracticePaper(),
       ]);
       const user = userResult && userResult.data ? userResult.data : {};
@@ -225,11 +248,7 @@ Page({
       loadingUser: true,
     });
     try {
-      const result = await this.callFunction(
-        USER_CLOUD_FUNCTION_NAME,
-        { type: "getCurrentUser" },
-        USER_CLOUD_FUNCTION_NAME
-      );
+      const result = await this.callFunction(USER_CLOUD_FUNCTION_NAME, { type: "getCurrentUser" });
       const user = result && result.data ? result.data : {};
       this.setData({
         loadingUser: false,
@@ -247,40 +266,15 @@ Page({
     }
   },
 
-  resetPracticeState() {
-    this.questionCacheMap = new Map();
-    this.loadingQuestionIds = new Set();
-    this.paperQuestions = [];
-    this.setData({
-      paperQuestionRefs: [],
-      paperMeta: {
-        totalCount: 0,
-        generatedAt: 0,
-      },
-      currentQuestionIndex: 0,
-      currentQuestion: null,
-      currentSelectedOptionKeys: [],
-      answerMap: {},
-      loadedQuestionIds: [],
-      hasPrevious: false,
-      hasNext: false,
-      showResultCard: false,
-      submissionSummary: null,
-    });
-  },
-
   async loadPracticePaper(showToast = false) {
     this.setData({
       loadingPaper: true,
-      showResultCard: false,
-      submissionSummary: null,
     });
 
     try {
       const result = await this.callFunction(
         QUESTION_CLOUD_FUNCTION_NAME,
-        { type: "getPracticePaper" },
-        QUESTION_CLOUD_FUNCTION_NAME
+        { type: "getPracticePaper" }
       );
       const data = isPlainObject(result.data) ? result.data : {};
       const questions = normalizeArray(data.questions).map((item) => normalizeQuestion(item));
@@ -288,10 +282,10 @@ Page({
       this.questionCacheMap = new Map();
       this.loadingQuestionIds = new Set();
 
-      const paperQuestionRefs = buildPaperRefs(questions);
       this.setData({
         loadingPaper: false,
-        paperQuestionRefs,
+        mode: "answering",
+        paperQuestionRefs: buildPaperRefs(questions),
         paperMeta: {
           totalCount: Number(data.paperMeta && data.paperMeta.totalCount) || questions.length,
           generatedAt: Number(data.paperMeta && data.paperMeta.generatedAt) || Date.now(),
@@ -303,6 +297,9 @@ Page({
         loadedQuestionIds: [],
         hasPrevious: false,
         hasNext: questions.length > 1,
+        reviewQuestionResultsMap: {},
+        activeSubmissionId: "",
+        submissionSummary: null,
       });
 
       if (questions.length) {
@@ -315,11 +312,13 @@ Page({
           icon: "success",
         });
       }
+      return result;
     } catch (error) {
       this.setData({
         loadingPaper: false,
       });
       this.showCloudTip("试卷加载失败", getErrorMessage(error));
+      throw error;
     }
   },
 
@@ -365,7 +364,7 @@ Page({
     });
   },
 
-  buildRenderedQuestion(question, selectedKeysOverride) {
+  buildRenderedQuestion(question, selectedKeysOverride, reviewMapOverride, modeOverride) {
     if (!question) {
       return null;
     }
@@ -374,16 +373,27 @@ Page({
         ? this.data.answerMap[question.questionId] || []
         : selectedKeysOverride
     );
+    const mode = modeOverride || this.data.mode;
+    const reviewMap = reviewMapOverride || this.data.reviewQuestionResultsMap || {};
+    const reviewResult = reviewMap[question.questionId] || null;
 
     return {
       ...question,
       sharedStemVisible: question.entryMode === "grouped" && hasRichContent(question.sharedStem),
       stemVisible: hasRichContent(question.stem),
+      reviewResult,
+      isReviewMode: mode === "review",
+      reviewStatusText: reviewResult
+        ? reviewResult.isCorrect
+          ? "答对"
+          : "答错"
+        : "",
       options: {
         ...question.options,
         items: normalizeArray(question.options.items).map((item) => ({
           ...item,
           selected: selectedOptionKeys.includes(item.key),
+          selectionLabel: selectedOptionKeys.includes(item.key) ? "我的答案" : "未选择",
         })),
       },
       optionKeysForDisplay: normalizeArray(question.options.keys).map((key) => ({
@@ -391,6 +401,12 @@ Page({
         selected: selectedOptionKeys.includes(key),
       })),
       selectedOptionKeys,
+      selectedOptionKeysText: selectedOptionKeys.length ? selectedOptionKeys.join(" / ") : "未作答",
+      modeTitle: mode === "review" ? "作答回顾" : "作答区",
+      modeTip:
+        mode === "review"
+          ? "当前为交卷回顾模式，仅展示你当时的作答与对错标记。"
+          : "支持多选；当前题切换时会保留你的作答。",
     };
   },
 
@@ -425,6 +441,10 @@ Page({
   },
 
   toggleOptionSelection(e) {
+    if (this.data.mode !== "answering") {
+      return;
+    }
+
     const key = normalizeString(e.currentTarget.dataset.key).toUpperCase();
     const currentQuestion = this.data.currentQuestion;
     if (!currentQuestion || !key) {
@@ -467,15 +487,20 @@ Page({
         urls.push(question.options.groupedAsset.imageFileId);
       }
     }
-    const previewUrls = urls.length ? urls : [src];
     wx.previewImage({
       current: src,
-      urls: previewUrls,
+      urls: urls.length ? urls : [src],
     });
   },
 
   async refreshPaper() {
     await this.loadPracticePaper(true);
+  },
+
+  openPracticeHistory() {
+    wx.navigateTo({
+      url: "/pages/practice-history/index",
+    });
   },
 
   buildSubmitPayload() {
@@ -525,18 +550,21 @@ Page({
     });
 
     try {
-      const result = await this.callFunction(
-        QUESTION_CLOUD_FUNCTION_NAME,
-        {
-          type: "submitPracticePaper",
-          ...this.buildSubmitPayload(),
-        },
-        QUESTION_CLOUD_FUNCTION_NAME
-      );
+      const result = await this.callFunction(QUESTION_CLOUD_FUNCTION_NAME, {
+        type: "submitPracticePaper",
+        ...this.buildSubmitPayload(),
+      });
       const summary = isPlainObject(result.data) ? result.data : {};
+      const reviewQuestionResultsMap = buildQuestionResultMap(summary.questionResults || []);
+      const currentQuestionSource = this.questionCacheMap.get(
+        this.data.paperQuestionRefs[this.data.currentQuestionIndex]?.questionId || ""
+      );
+
       this.setData({
         submitting: false,
-        showResultCard: true,
+        mode: "review",
+        reviewQuestionResultsMap,
+        activeSubmissionId: summary.submissionId || "",
         submissionSummary: {
           submissionId: summary.submissionId || "",
           totalCount: Number(summary.totalCount || 0),
@@ -544,7 +572,16 @@ Page({
           correctCount: Number(summary.correctCount || 0),
           score: Number(summary.score || 0),
           submittedAt: Number(summary.submittedAt || Date.now()),
+          submittedAtText: formatTime(Number(summary.submittedAt || Date.now())),
         },
+        currentQuestion: currentQuestionSource
+          ? this.buildRenderedQuestion(
+              currentQuestionSource,
+              this.data.answerMap[currentQuestionSource.questionId] || [],
+              reviewQuestionResultsMap,
+              "review"
+            )
+          : this.data.currentQuestion,
       });
       wx.showToast({
         title: "交卷成功",

@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "做题记录",
+  "enablePullDownRefresh": true,
+  "usingComponents": {
+    "cloud-tip-modal": "/components/cloudTipModal/index"
+  }
+}

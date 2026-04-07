@@ -39,7 +39,7 @@ Page({
     entranceList: [
       {
         title: "题库入口",
-        tip: "先同步当前用户，再进入题目浏览或管理员管理页",
+        tip: "先同步当前用户，再进入在线答题、做题记录或管理员管理页",
         showItem: true,
         item: [
           {
@@ -52,7 +52,11 @@ Page({
           },
           {
             type: "question-browser",
-            title: "题目浏览",
+            title: "在线答题",
+          },
+          {
+            type: "practice-history",
+            title: "做题记录",
           },
           {
             type: "question-admin",
@@ -252,6 +256,12 @@ Page({
     });
   },
 
+  openPracticeHistory() {
+    wx.navigateTo({
+      url: "/pages/practice-history/index",
+    });
+  },
+
   jumpPage(e) {
     const type = e.currentTarget.dataset.type;
     if (type === "getCurrentUser") {
@@ -264,6 +274,10 @@ Page({
     }
     if (type === "question-browser") {
       this.openQuestionBrowser();
+      return;
+    }
+    if (type === "practice-history") {
+      this.openPracticeHistory();
       return;
     }
     if (type === "question-admin") {

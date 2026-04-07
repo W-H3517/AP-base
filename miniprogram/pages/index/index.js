@@ -82,6 +82,12 @@ Page({
     });
   },
 
+  hideCloudTip() {
+    this.setData({
+      showTip: false,
+    });
+  },
+
   hideGroup(e) {
     const index = e.currentTarget.dataset.index;
     const entranceList = this.data.entranceList.slice();

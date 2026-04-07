@@ -106,6 +106,59 @@ function createEmptyEditorForm() {
   };
 }
 
+function buildAnswerChoiceList(question) {
+  const source = isPlainObject(question) ? question : {};
+  const keys = normalizeArray(source.options && source.options.keys)
+    .map((item) => normalizeString(item).toUpperCase())
+    .filter(Boolean);
+  const checkedKeySet = new Set(normalizeCheckboxKeys(source.correctOptionKeys));
+  return keys.map((key) => ({
+    key,
+    checked: checkedKeySet.has(key),
+  }));
+}
+
+function hydrateQuestionEditorState(question) {
+  const target = isPlainObject(question) ? question : createSingleQuestionForm();
+  target.optionMode = normalizeOptionMode(target.optionMode);
+  target.stem = normalizeRichContent(target.stem, target.stemImageFileId);
+  target.correctOptionKeys = normalizeCheckboxKeys(target.correctOptionKeys);
+  target.options = isPlainObject(target.options) ? target.options : createDefaultOptions();
+  target.options.groupedAsset = normalizeGroupedAsset(target.options.groupedAsset);
+  target.options.items = normalizeArray(target.options.items).map((item) => normalizeOptionItem(item));
+  target.options.keys = normalizeArray(target.options.keys)
+    .map((item) => normalizeString(item).toUpperCase())
+    .filter(Boolean);
+
+  if (!target.options.keys.length && target.options.items.length) {
+    target.options.keys = target.options.items.map((item) => item.key).filter(Boolean);
+  }
+
+  if (!target.options.keys.length) {
+    target.options.keys = ["A", "B"];
+  }
+
+  if (!target.options.items.length) {
+    target.options.items = target.options.keys.map((key) => createOptionItem(key));
+  }
+
+  const validKeySet = new Set(target.options.keys);
+  target.correctOptionKeys = target.correctOptionKeys.filter((item) => validKeySet.has(item));
+  target.answerChoices = buildAnswerChoiceList(target);
+  return target;
+}
+
+function hydrateEditorForm(form) {
+  const target = isPlainObject(form) ? form : createEmptyEditorForm();
+  target.single = hydrateQuestionEditorState(target.single);
+  target.grouped = isPlainObject(target.grouped) ? target.grouped : createGroupedQuestionForm();
+  target.grouped.sharedStem = normalizeRichContent(target.grouped.sharedStem);
+  target.grouped.children = normalizeArray(target.grouped.children).length
+    ? target.grouped.children.map((child) => hydrateQuestionEditorState(child))
+    : [hydrateQuestionEditorState(createSingleQuestionForm()), hydrateQuestionEditorState(createSingleQuestionForm())];
+  return target;
+}
+
 function getNextOptionKey(itemsOrKeys) {
   const usedKeys = new Set(
     (Array.isArray(itemsOrKeys) ? itemsOrKeys : [])
@@ -618,6 +671,12 @@ Page({
     });
   },
 
+  hideCloudTip() {
+    this.setData({
+      showTip: false,
+    });
+  },
+
   ensureCloudEnv() {
     if (getCloudEnv()) {
       return true;
@@ -640,6 +699,7 @@ Page({
   setEditorForm(mutator) {
     const editorForm = clone(this.data.editorForm);
     mutator(editorForm);
+    hydrateEditorForm(editorForm);
     this.setData({
       editorForm,
     });
@@ -1120,83 +1180,13 @@ Page({
     this.setData({
       editorMode: "create",
       editorEntryMode: "single",
-      editorForm: createEmptyEditorForm(),
+      editorForm: hydrateEditorForm(createEmptyEditorForm()),
       showEditorModal: true,
     });
   },
 
   async openEditQuestion(e) {
-    const questionId = normalizeString(e.currentTarget.dataset.questionid);
-    const groupId = normalizeString(e.currentTarget.dataset.groupid);
-    const version = normalizeVersion(e.currentTarget.dataset.version);
-    if (!this.ensureCloudEnv()) {
-      return;
-    }
-
-    wx.showLoading({
-      title: "加载题目...",
-    });
-
-    try {
-      if (groupId) {
-        const cached = this.getCachedDetail("group", groupId, version);
-        const groupData = cached && cached.data
-          ? cached.data
-          : normalizeQuestionGroupDetail(
-              (await this.callQuestionFunction("getQuestionGroupDetail", { groupId })).data || {},
-              this.data.isAdmin
-            );
-        if (!cached) {
-          this.setCachedDetail("group", groupId, {
-            type: "group",
-            version: groupData.version,
-            data: groupData,
-          });
-        }
-        this.setData({
-          editorMode: "edit",
-          editorEntryMode: "grouped",
-          editorForm: {
-            single: createSingleQuestionForm(),
-            grouped: normalizeEditorGroupedForm(groupData),
-          },
-          showEditorModal: true,
-        });
-      } else {
-        const cached = this.getCachedDetail("single", questionId, version);
-        const questionData = cached && cached.data
-          ? cached.data
-          : normalizeQuestionItem(
-              (await this.callQuestionFunction("getQuestionDetail", { questionId })).data || {},
-              this.data.isAdmin
-            );
-        if (!cached) {
-          this.setCachedDetail("single", questionId, {
-            type: "single",
-            version: questionData.version,
-            data: questionData,
-          });
-        }
-        this.setData({
-          editorMode: "edit",
-          editorEntryMode: "single",
-          editorForm: {
-            single: normalizeEditorSingleForm(questionData),
-            grouped: createGroupedQuestionForm(),
-          },
-          showEditorModal: true,
-        });
-      }
-    } catch (error) {
-      const errMsg = getErrorMessage(error);
-      if (isTimeoutError(errMsg)) {
-        this.showCloudTip("加载题目超时", "题目查询超时，请稍后重试。");
-      } else {
-        this.showCloudTip("加载题目失败", errMsg);
-      }
-    } finally {
-      wx.hideLoading();
-    }
+    this.showCloudTip("题目不可编辑", "题目当前不支持直接编辑，请删除后重新创建。");
   },
 
   closeEditor() {
@@ -1204,7 +1194,7 @@ Page({
       showEditorModal: false,
       editorMode: "create",
       editorEntryMode: "single",
-      editorForm: createEmptyEditorForm(),
+      editorForm: hydrateEditorForm(createEmptyEditorForm()),
     });
   },
 
@@ -1783,7 +1773,7 @@ Page({
             const uploads = await Promise.all(
               files.map((file, index) =>
                 wx.cloud.uploadFile({
-                  cloudPath: `${prefix}-${Date.now()}-${index}.png`,
+                  cloudPath: `temp/${prefix}/${Date.now()}-${index}.png`,
                   filePath: file.tempFilePath,
                 })
               )
@@ -1991,14 +1981,11 @@ Page({
       return;
     }
 
-    const payload = clone(validation.data);
-    if (isGrouped) {
-      if (this.data.editorMode === "edit") {
-        payload.groupId = normalizeString(this.data.editorForm.grouped.groupId);
-      }
-    } else if (this.data.editorMode === "edit") {
-      payload.questionId = normalizeString(this.data.editorForm.single.questionId);
+    if (this.data.editorMode === "edit") {
+      this.showCloudTip("题目不可编辑", "题目当前不支持直接编辑，请删除后重新创建。");
+      return;
     }
+    const payload = clone(validation.data);
 
     wx.showLoading({
       title: "保存中...",
@@ -2008,13 +1995,7 @@ Page({
     });
 
     try {
-      const actionType = isGrouped
-        ? this.data.editorMode === "edit"
-          ? "updateQuestionGroup"
-          : "createQuestionGroup"
-        : this.data.editorMode === "edit"
-          ? "updateQuestion"
-          : "createQuestion";
+      const actionType = isGrouped ? "createQuestionGroup" : "createQuestion";
       const result = await this.callQuestionFunction(actionType, payload);
 
       if (isGrouped) {

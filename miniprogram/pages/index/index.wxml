@@ -71,5 +71,5 @@
     </view>
   </view>
 
-  <cloud-tip-modal showTipProps="{{showTip}}" title="{{title}}" content="{{content}}"></cloud-tip-modal>
+  <cloud-tip-modal showTipProps="{{showTip}}" title="{{title}}" content="{{content}}" bindclose="hideCloudTip"></cloud-tip-modal>
 </view>

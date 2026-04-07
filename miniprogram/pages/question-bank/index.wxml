@@ -1,8 +1,32 @@
 <view class="page-container">
-  <view class="title">题库管理</view>
-  <view class="top_tip">当前用户：{{currentUser.role || '未同步'}}。管理员可访问分页预览列表，详情在弹窗中按需加载并缓存。</view>
+  <view class="hero-card">
+    <view class="hero-top">
+      <view>
+        <view class="title">题库管理</view>
+        <view class="top_tip">管理员可在这里维护题目列表、查看详情并进行批量录入，详情弹窗会按需加载并缓存。</view>
+      </view>
+      <view class="role-badge {{isAdmin ? 'role-badge-admin' : 'role-badge-user'}}">
+        {{currentUser.role || '未同步'}}
+      </view>
+    </view>
+    <view class="hero-stats">
+      <view class="hero-stat">
+        <view class="hero-stat-value">{{questionSummaries.length}}</view>
+        <view class="hero-stat-label">已加载题目</view>
+      </view>
+      <view class="hero-stat">
+        <view class="hero-stat-value">{{isAdmin ? (listHasMore ? '可继续' : '已到底') : '受限'}}</view>
+        <view class="hero-stat-label">列表状态</view>
+      </view>
+      <view class="hero-stat">
+        <view class="hero-stat-value">{{selectedDetailSource === 'cache' ? '缓存' : '实时'}}</view>
+        <view class="hero-stat-label">详情来源</view>
+      </view>
+    </view>
+  </view>
 
   <view class="summary-card">
+    <view class="panel-title">当前会话</view>
     <view class="summary-row">
       <view class="summary-label">OpenID</view>
       <view class="summary-value">{{currentUser.openid || '待同步'}}</view>
@@ -14,9 +38,9 @@
   </view>
 
   <view class="toolbar">
-    <button class="btn-full toolbar-btn" bindtap="refreshCurrentUser" loading="{{loadingUser}}">刷新用户</button>
+    <button class="btn-full toolbar-btn toolbar-btn-secondary" bindtap="refreshCurrentUser" loading="{{loadingUser}}">刷新用户</button>
     <button class="btn-full toolbar-btn" wx:if="{{isAdmin}}" bindtap="refreshQuestionSummaries" loading="{{loadingQuestions}}">刷新列表</button>
-    <button class="btn-full toolbar-btn" wx:if="{{isAdmin}}" bindtap="openCreateQuestion">新增题目</button>
+    <button class="btn-full toolbar-btn toolbar-btn-accent" wx:if="{{isAdmin}}" bindtap="openCreateQuestion">新增题目</button>
   </view>
 
   <view class="empty-state" wx:if="{{!isAdmin && userLoaded}}">
@@ -32,6 +56,10 @@
   </view>
 
   <view class="question-list" wx:if="{{isAdmin && questionSummaries.length}}">
+    <view class="list-title-row">
+      <view class="list-title">题目列表</view>
+      <view class="list-subtitle">支持单题与题组分页预览</view>
+    </view>
     <view class="question-card summary-question-card" wx:for="{{questionSummaries}}" wx:key="summaryId" wx:for-item="question">
       <view wx:if="{{question.entityType === 'single'}}">
         <view class="question-header">
@@ -46,7 +74,6 @@
           </view>
           <view class="question-actions">
             <button size="mini" bindtap="viewQuestionDetail" data-questionid="{{question.questionId}}" data-version="{{question.version}}">详情</button>
-            <button size="mini" wx:if="{{isAdmin}}" bindtap="openEditQuestion" data-questionid="{{question.questionId}}" data-version="{{question.version}}">编辑</button>
             <button size="mini" type="warn" wx:if="{{isAdmin}}" loading="{{deletingQuestionId === question.questionId}}" bindtap="deleteQuestion" data-questionid="{{question.questionId}}">删除</button>
           </view>
         </view>
@@ -71,7 +98,6 @@
             <button size="mini" bindtap="toggleGroupExpanded" data-groupid="{{question.groupId}}">
               {{question.isExpanded ? '收起' : '展开'}}
             </button>
-            <button size="mini" wx:if="{{isAdmin}}" bindtap="openEditQuestion" data-groupid="{{question.groupId}}" data-version="{{question.version}}">编辑题组</button>
             <button size="mini" type="warn" wx:if="{{isAdmin}}" loading="{{deletingQuestionId === question.groupId}}" bindtap="deleteQuestionGroup" data-groupid="{{question.groupId}}">删除题组</button>
           </view>
         </view>
@@ -260,9 +286,9 @@
 
         <view class="section-title">正确答案</view>
         <checkbox-group bindchange="onCorrectOptionChange">
-          <label class="checkbox-item" wx:for="{{editorForm.single.options.keys}}" wx:key="*this" wx:for-item="key">
-            <checkbox value="{{key}}" checked="{{editorForm.single.correctOptionKeys.indexOf(key) !== -1}}" />
-            <text>{{key}}</text>
+          <label class="checkbox-item" wx:for="{{editorForm.single.answerChoices}}" wx:key="key" wx:for-item="choice">
+            <checkbox value="{{choice.key}}" checked="{{choice.checked}}" />
+            <text>{{choice.key}}</text>
           </label>
         </checkbox-group>
       </view>
@@ -361,9 +387,9 @@
 
           <view class="section-title">正确答案</view>
           <checkbox-group bindchange="onCorrectOptionChange" data-scope="group-child" data-child-index="{{childIndex}}">
-            <label class="checkbox-item" wx:for="{{child.options.keys}}" wx:key="*this" wx:for-item="key">
-              <checkbox value="{{key}}" checked="{{child.correctOptionKeys.indexOf(key) !== -1}}" />
-              <text>{{key}}</text>
+            <label class="checkbox-item" wx:for="{{child.answerChoices}}" wx:key="key" wx:for-item="choice">
+              <checkbox value="{{choice.key}}" checked="{{choice.checked}}" />
+              <text>{{choice.key}}</text>
             </label>
           </checkbox-group>
         </view>
@@ -378,5 +404,5 @@
     </view>
   </view>
 
-  <cloud-tip-modal showTipProps="{{showTip}}" title="{{title}}" content="{{content}}"></cloud-tip-modal>
+  <cloud-tip-modal showTipProps="{{showTip}}" title="{{title}}" content="{{content}}" bindclose="hideCloudTip"></cloud-tip-modal>
 </view>

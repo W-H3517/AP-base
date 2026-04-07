@@ -21,8 +21,9 @@ Component({
   methods: {
     onClose(){
       this.setData({
-        showTip: !this.data.showTip
+        showTip: false
       });
+      this.triggerEvent("close");
     },
   }
 });

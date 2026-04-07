@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const cloud = require("wx-server-sdk");
 const { db } = require("./db");
 const {
   QUESTIONS_COLLECTION,
@@ -18,6 +19,23 @@ const {
   sortQuestions,
 } = require("./utils");
 const { ensureUserRecord, requireAdmin, normalizeRole } = require("./userAccess");
+
+const TEMP_RESOURCE_PREFIX = "temp/";
+const SINGLE_RESOURCE_PREFIX = "Resources/single";
+const GROUP_RESOURCE_PREFIX = "Resources/group";
+const CLOUD_DELETE_BATCH_SIZE = 50;
+
+const cloneJson = (value) => JSON.parse(JSON.stringify(value));
+
+const isMissingCloudFileError = (error) => {
+  const errMsg = normalizeString(error?.message || String(error)).toLowerCase();
+  return (
+    errMsg.includes("file not exist") ||
+    errMsg.includes("file not found") ||
+    errMsg.includes("resource not found") ||
+    errMsg.includes("not exist")
+  );
+};
 
 const validateSourceType = (sourceType, fieldName) => {
   if (
@@ -415,7 +433,308 @@ const normalizeListLimit = (limit) => {
   return Math.min(Math.floor(parsed), 100);
 };
 
-const stripQuestionByRole = (question, role, version = getSingleQuestionVersion(question)) => {
+const sanitizePathSegment = (value, fallback = "resource") => {
+  const normalized = normalizeString(value)
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || fallback;
+};
+
+const getFileExtensionFromFileId = (fileId) => {
+  const normalized = normalizeString(fileId);
+  const matched = normalized.match(/(\.[a-zA-Z0-9]+)(?:$|[?#])/);
+  return matched ? matched[1].toLowerCase() : ".png";
+};
+
+const isTempFileId = (fileId) => {
+  const normalized = normalizeString(fileId);
+  return normalized.includes(`/${TEMP_RESOURCE_PREFIX}`) || normalized.includes(TEMP_RESOURCE_PREFIX);
+};
+
+const isManagedResourceFileId = (fileId) => {
+  const normalized = normalizeString(fileId);
+  return normalized.includes("/Resources/") || normalized.includes("Resources/");
+};
+
+const buildResourceCloudPath = (basePath, kind, fileId, suffix = "") => {
+  const ext = getFileExtensionFromFileId(fileId);
+  const random = crypto.randomBytes(8).toString("hex");
+  const normalizedKind = sanitizePathSegment(kind, "asset");
+  const normalizedSuffix = sanitizePathSegment(suffix, "");
+  return `${basePath}/${normalizedKind}${normalizedSuffix ? `-${normalizedSuffix}` : ""}-${random}${ext}`;
+};
+
+const copyCloudFileToResource = async (sourceFileId, cloudPath) => {
+  const downloadResult = await cloud.downloadFile({
+    fileID: sourceFileId,
+  });
+  const uploadResult = await cloud.uploadFile({
+    cloudPath,
+    fileContent: downloadResult.fileContent,
+  });
+  return normalizeString(uploadResult?.fileID);
+};
+
+const extractFileIdsFromRichContent = (content) => {
+  if (normalizeString(content?.sourceType) !== CONTENT_SOURCE_IMAGE) {
+    return [];
+  }
+  return Array.isArray(content?.imageFileIds)
+    ? content.imageFileIds.map((item) => normalizeString(item)).filter(Boolean)
+    : [];
+};
+
+const extractFileIdsFromOptions = (options, optionMode) => {
+  const fileIds = [];
+  if (optionMode === OPTION_MODE_PER_OPTION) {
+    (options?.items || []).forEach((item) => {
+      if (normalizeString(item?.sourceType) === CONTENT_SOURCE_IMAGE) {
+        const fileId = normalizeString(item?.imageFileId);
+        if (fileId) {
+          fileIds.push(fileId);
+        }
+      }
+    });
+  }
+
+  if (optionMode === OPTION_MODE_GROUPED_ASSET) {
+    const groupedAssetFileId = normalizeString(options?.groupedAsset?.imageFileId);
+    if (groupedAssetFileId) {
+      fileIds.push(groupedAssetFileId);
+    }
+  }
+
+  return fileIds;
+};
+
+const extractQuestionResourceFileIds = (question, { includeSharedStem = true } = {}) => {
+  if (!question) {
+    return [];
+  }
+  const fileIds = [];
+  if (includeSharedStem) {
+    fileIds.push(...extractFileIdsFromRichContent(question.sharedStem));
+  }
+  fileIds.push(...extractFileIdsFromRichContent(question.stem));
+  fileIds.push(...extractFileIdsFromOptions(question.options, question.optionMode));
+  return [...new Set(fileIds.filter((fileId) => isManagedResourceFileId(fileId)))];
+};
+
+const extractGroupResourceFileIds = (questions) => {
+  const fileIdSet = new Set();
+  (questions || []).forEach((question, index) => {
+    extractQuestionResourceFileIds(question, {
+      includeSharedStem: index === 0,
+    }).forEach((fileId) => fileIdSet.add(fileId));
+  });
+  return [...fileIdSet];
+};
+
+const deleteCloudFiles = async (fileIds) => {
+  const normalizedFileIds = [...new Set((fileIds || []).map((item) => normalizeString(item)).filter(Boolean))];
+  for (let i = 0; i < normalizedFileIds.length; i += CLOUD_DELETE_BATCH_SIZE) {
+    const fileList = normalizedFileIds.slice(i, i + CLOUD_DELETE_BATCH_SIZE);
+    if (!fileList.length) {
+      continue;
+    }
+    try {
+      const resp = await cloud.deleteFile({ fileList });
+      const results = Array.isArray(resp?.fileList) ? resp.fileList : [];
+      results.forEach((item) => {
+        const status = Number(item?.status || 0);
+        const errMsg = normalizeString(item?.errMsg).toLowerCase();
+        if (status !== 0 && !errMsg.includes("not exist") && !errMsg.includes("not found")) {
+          throw new Error(item?.errMsg || "云文件删除失败");
+        }
+      });
+    } catch (error) {
+      if (!isMissingCloudFileError(error)) {
+        throw error;
+      }
+    }
+  }
+};
+
+const safeDeleteCloudFiles = async (fileIds) => {
+  try {
+    await deleteCloudFiles(fileIds);
+  } catch (error) {
+    // Rollback cleanup is best effort.
+  }
+};
+
+const materializeRichContentResources = async (content, basePath, kind, suffix = "") => {
+  const nextContent = cloneJson(content || {});
+  const createdFileIds = [];
+
+  if (normalizeString(nextContent?.sourceType) !== CONTENT_SOURCE_IMAGE) {
+    return {
+      content: nextContent,
+      createdFileIds,
+    };
+  }
+
+  const nextImageFileIds = [];
+  const imageFileIds = Array.isArray(nextContent.imageFileIds) ? nextContent.imageFileIds : [];
+  for (let i = 0; i < imageFileIds.length; i += 1) {
+    const fileId = normalizeString(imageFileIds[i]);
+    if (!fileId) {
+      continue;
+    }
+    if (!isTempFileId(fileId)) {
+      nextImageFileIds.push(fileId);
+      continue;
+    }
+
+    const targetFileId = await copyCloudFileToResource(
+      fileId,
+      buildResourceCloudPath(basePath, kind, fileId, `${suffix}${suffix ? "-" : ""}${i + 1}`),
+    );
+    nextImageFileIds.push(targetFileId);
+    createdFileIds.push(targetFileId);
+  }
+  nextContent.imageFileIds = nextImageFileIds;
+
+  return {
+    content: nextContent,
+    createdFileIds,
+  };
+};
+
+const materializeOptionsResources = async (options, optionMode, basePath, suffix = "") => {
+  const nextOptions = cloneJson(options || {});
+  const createdFileIds = [];
+
+  if (optionMode === OPTION_MODE_PER_OPTION) {
+    nextOptions.items = Array.isArray(nextOptions.items) ? nextOptions.items : [];
+    for (let i = 0; i < nextOptions.items.length; i += 1) {
+      const item = nextOptions.items[i];
+      if (normalizeString(item?.sourceType) !== CONTENT_SOURCE_IMAGE) {
+        continue;
+      }
+      const fileId = normalizeString(item?.imageFileId);
+      if (!fileId || !isTempFileId(fileId)) {
+        continue;
+      }
+      const optionKey = sanitizePathSegment(item.key || `option-${i + 1}`, `option-${i + 1}`);
+      const targetFileId = await copyCloudFileToResource(
+        fileId,
+        buildResourceCloudPath(basePath, "option", fileId, `${suffix}${suffix ? "-" : ""}${optionKey}`),
+      );
+      nextOptions.items[i] = {
+        ...item,
+        imageFileId: targetFileId,
+      };
+      createdFileIds.push(targetFileId);
+    }
+  }
+
+  if (optionMode === OPTION_MODE_GROUPED_ASSET) {
+    const fileId = normalizeString(nextOptions?.groupedAsset?.imageFileId);
+    if (fileId && isTempFileId(fileId)) {
+      const targetFileId = await copyCloudFileToResource(
+        fileId,
+        buildResourceCloudPath(basePath, "grouped-asset", fileId, suffix),
+      );
+      nextOptions.groupedAsset = {
+        ...nextOptions.groupedAsset,
+        imageFileId: targetFileId,
+      };
+      createdFileIds.push(targetFileId);
+    }
+  }
+
+  return {
+    options: nextOptions,
+    createdFileIds,
+  };
+};
+
+const materializeSingleQuestionResources = async (question, questionId) => {
+  const nextQuestion = cloneJson(question);
+  const basePath = `${SINGLE_RESOURCE_PREFIX}/${questionId}`;
+  const createdFileIds = [];
+
+  const sharedStemResult = await materializeRichContentResources(
+    nextQuestion.sharedStem,
+    basePath,
+    "shared-stem",
+  );
+  nextQuestion.sharedStem = sharedStemResult.content;
+  createdFileIds.push(...sharedStemResult.createdFileIds);
+
+  const stemResult = await materializeRichContentResources(
+    nextQuestion.stem,
+    basePath,
+    "stem",
+  );
+  nextQuestion.stem = stemResult.content;
+  createdFileIds.push(...stemResult.createdFileIds);
+
+  const optionsResult = await materializeOptionsResources(
+    nextQuestion.options,
+    nextQuestion.optionMode,
+    basePath,
+  );
+  nextQuestion.options = optionsResult.options;
+  createdFileIds.push(...optionsResult.createdFileIds);
+
+  return {
+    question: nextQuestion,
+    createdFileIds,
+  };
+};
+
+const materializeGroupResources = async (sharedStem, children, groupId) => {
+  const basePath = `${GROUP_RESOURCE_PREFIX}/${groupId}`;
+  const createdFileIds = [];
+
+  const sharedStemResult = await materializeRichContentResources(
+    sharedStem,
+    basePath,
+    "shared-stem",
+  );
+  const finalSharedStem = sharedStemResult.content;
+  createdFileIds.push(...sharedStemResult.createdFileIds);
+
+  const finalChildren = [];
+  for (let i = 0; i < children.length; i += 1) {
+    const child = cloneJson(children[i]);
+    child.sharedStem = finalSharedStem;
+
+    const stemResult = await materializeRichContentResources(
+      child.stem,
+      basePath,
+      "stem",
+      String(i + 1),
+    );
+    child.stem = stemResult.content;
+    createdFileIds.push(...stemResult.createdFileIds);
+
+    const optionsResult = await materializeOptionsResources(
+      child.options,
+      child.optionMode,
+      basePath,
+      String(i + 1),
+    );
+    child.options = optionsResult.options;
+    createdFileIds.push(...optionsResult.createdFileIds);
+
+    finalChildren.push(child);
+  }
+
+  return {
+    sharedStem: finalSharedStem,
+    children: finalChildren,
+    createdFileIds,
+  };
+};
+
+const stripQuestionByRole = (
+  question,
+  role,
+  version = getSingleQuestionVersion(question),
+) => {
   if (!question) {
     return null;
   }
@@ -445,7 +764,7 @@ const stripQuestionByRole = (question, role, version = getSingleQuestionVersion(
           sourceType: CONTENT_SOURCE_IMAGE,
           imageFileId: "",
         },
-    },
+      },
     groupOrder: Number(question.groupOrder || 1),
     version,
     createTime: question.createTime,
@@ -593,7 +912,6 @@ const listQuestionSummaries = async (event) => {
   const limit = normalizeListLimit(payload?.limit);
   const offset = decodeCursor(payload?.cursor);
 
-  // keyword is intentionally accepted as a forward-compatible placeholder for later search support.
   normalizeString(payload?.keyword);
 
   const resp = await db.collection(QUESTIONS_COLLECTION).get();
@@ -678,64 +996,40 @@ const createQuestion = async (event) => {
   const validated = normalizeSingleQuestionPayload(getEventPayload(event));
   const now = Date.now();
   const questionId = await generateQuestionId();
+  const createdResourceFileIds = [];
 
-  await db.collection(QUESTIONS_COLLECTION).add({
-    data: {
-      questionId,
-      groupId: "",
-      questionType: validated.questionType,
-      entryMode: ENTRY_MODE_SINGLE,
-      sharedStem: validated.sharedStem,
-      stem: validated.stem,
-      optionMode: validated.optionMode,
-      options: validated.options,
-      correctOptionKeys: validated.correctOptionKeys,
-      groupOrder: 1,
-      createTime: now,
-      updateTime: now,
-      createdBy: user.openid,
-      updatedBy: user.openid,
-    },
-  });
+  try {
+    const materialized = await materializeSingleQuestionResources(validated, questionId);
+    createdResourceFileIds.push(...materialized.createdFileIds);
 
-  return ok({ questionId });
+    await db.collection(QUESTIONS_COLLECTION).add({
+      data: {
+        questionId,
+        groupId: "",
+        questionType: materialized.question.questionType,
+        entryMode: ENTRY_MODE_SINGLE,
+        sharedStem: materialized.question.sharedStem,
+        stem: materialized.question.stem,
+        optionMode: materialized.question.optionMode,
+        options: materialized.question.options,
+        correctOptionKeys: materialized.question.correctOptionKeys,
+        groupOrder: 1,
+        createTime: now,
+        updateTime: now,
+        createdBy: user.openid,
+        updatedBy: user.openid,
+      },
+    });
+
+    return ok({ questionId });
+  } catch (error) {
+    await safeDeleteCloudFiles(createdResourceFileIds);
+    return fail(error);
+  }
 };
 
-const updateQuestion = async (event) => {
-  const user = await requireAdmin();
-  const payload = getEventPayload(event);
-  const questionId = normalizeString(payload.questionId);
-  if (!questionId) {
-    return fail("questionId 不能为空");
-  }
-
-  const existingQuestion = await getQuestionById(questionId);
-  if (!existingQuestion) {
-    return fail("题目不存在");
-  }
-  if ((existingQuestion.entryMode || ENTRY_MODE_SINGLE) !== ENTRY_MODE_SINGLE) {
-    return fail("关联题请使用题组更新接口");
-  }
-
-  const validated = await buildSingleQuestionDocument(payload, user, existingQuestion);
-  await db.collection(QUESTIONS_COLLECTION).doc(existingQuestion._id).update({
-    data: {
-      questionType: validated.questionType,
-      entryMode: ENTRY_MODE_SINGLE,
-      sharedStem: validated.sharedStem,
-      stem: validated.stem,
-      optionMode: validated.optionMode,
-      options: validated.options,
-      correctOptionKeys: validated.correctOptionKeys,
-      groupId: "",
-      groupOrder: 1,
-      updateTime: validated.updateTime,
-      updatedBy: validated.updatedBy,
-    },
-  });
-
-  return ok({ questionId });
-};
+const updateQuestion = async () =>
+  fail("题目不支持直接编辑，请删除后重新创建");
 
 const createQuestionGroup = async (event) => {
   const user = await requireAdmin();
@@ -744,79 +1038,43 @@ const createQuestionGroup = async (event) => {
   const children = normalizeGroupedChildren(payload?.children, sharedStem);
   const groupId = await generateGroupId();
   const now = Date.now();
+  const createdResourceFileIds = [];
 
-  for (const child of children) {
-    const questionId = await generateQuestionId();
-    await db.collection(QUESTIONS_COLLECTION).add({
-      data: {
-        questionId,
-        groupId,
-        questionType: child.questionType,
-        entryMode: ENTRY_MODE_GROUPED,
-        sharedStem,
-        stem: child.stem,
-        optionMode: child.optionMode,
-        options: child.options,
-        correctOptionKeys: child.correctOptionKeys,
-        groupOrder: child.groupOrder,
-        createTime: now,
-        updateTime: now,
-        createdBy: user.openid,
-        updatedBy: user.openid,
-      },
-    });
+  try {
+    const materialized = await materializeGroupResources(sharedStem, children, groupId);
+    createdResourceFileIds.push(...materialized.createdFileIds);
+
+    for (const child of materialized.children) {
+      const questionId = await generateQuestionId();
+      await db.collection(QUESTIONS_COLLECTION).add({
+        data: {
+          questionId,
+          groupId,
+          questionType: child.questionType,
+          entryMode: ENTRY_MODE_GROUPED,
+          sharedStem: materialized.sharedStem,
+          stem: child.stem,
+          optionMode: child.optionMode,
+          options: child.options,
+          correctOptionKeys: child.correctOptionKeys,
+          groupOrder: child.groupOrder,
+          createTime: now,
+          updateTime: now,
+          createdBy: user.openid,
+          updatedBy: user.openid,
+        },
+      });
+    }
+
+    return ok({ groupId });
+  } catch (error) {
+    await safeDeleteCloudFiles(createdResourceFileIds);
+    return fail(error);
   }
-
-  return ok({ groupId });
 };
 
-const updateQuestionGroup = async (event) => {
-  const user = await requireAdmin();
-  const payload = getEventPayload(event);
-  const groupId = normalizeString(payload?.groupId);
-  if (!groupId) {
-    return fail("groupId 不能为空");
-  }
-
-  const existingQuestions = await getQuestionsByGroupId(groupId);
-  if (!existingQuestions.length) {
-    return fail("题组不存在");
-  }
-
-  const sharedStem = normalizeRichStem(payload?.sharedStem, "sharedStem");
-  const children = normalizeGroupedChildren(payload?.children, sharedStem);
-  const existingById = new Map(
-    existingQuestions.map((question) => [question.questionId, question]),
-  );
-
-  for (const question of existingQuestions) {
-    await db.collection(QUESTIONS_COLLECTION).doc(question._id).remove();
-  }
-
-  for (const child of children) {
-    const existingQuestion = existingById.get(child.questionId);
-    await db.collection(QUESTIONS_COLLECTION).add({
-      data: {
-        questionId: child.questionId || existingQuestion?.questionId || (await generateQuestionId()),
-        groupId,
-        questionType: child.questionType,
-        entryMode: ENTRY_MODE_GROUPED,
-        sharedStem,
-        stem: child.stem,
-        optionMode: child.optionMode,
-        options: child.options,
-        correctOptionKeys: child.correctOptionKeys,
-        groupOrder: child.groupOrder,
-        createTime: existingQuestion?.createTime || Date.now(),
-        updateTime: Date.now(),
-        createdBy: existingQuestion?.createdBy || user.openid,
-        updatedBy: user.openid,
-      },
-    });
-  }
-
-  return ok({ groupId });
-};
+const updateQuestionGroup = async () =>
+  fail("题组不支持直接编辑，请删除整组后重新上传");
 
 const deleteQuestion = async (event) => {
   await requireAdmin();
@@ -828,8 +1086,18 @@ const deleteQuestion = async (event) => {
   if (!existingQuestion) {
     return fail("题目不存在");
   }
-  await db.collection(QUESTIONS_COLLECTION).doc(existingQuestion._id).remove();
-  return ok({ questionId });
+  if ((existingQuestion.entryMode || ENTRY_MODE_SINGLE) !== ENTRY_MODE_SINGLE) {
+    return fail("组内题目不支持单独删除，请删除整组");
+  }
+
+  const resourceFileIds = extractQuestionResourceFileIds(existingQuestion);
+  try {
+    await deleteCloudFiles(resourceFileIds);
+    await db.collection(QUESTIONS_COLLECTION).doc(existingQuestion._id).remove();
+    return ok({ questionId });
+  } catch (error) {
+    return fail(error);
+  }
 };
 
 const deleteQuestionGroup = async (event) => {
@@ -844,11 +1112,16 @@ const deleteQuestionGroup = async (event) => {
     return fail("题组不存在");
   }
 
-  for (const question of existingQuestions) {
-    await db.collection(QUESTIONS_COLLECTION).doc(question._id).remove();
+  const resourceFileIds = extractGroupResourceFileIds(existingQuestions);
+  try {
+    await deleteCloudFiles(resourceFileIds);
+    for (const question of existingQuestions) {
+      await db.collection(QUESTIONS_COLLECTION).doc(question._id).remove();
+    }
+    return ok({ groupId });
+  } catch (error) {
+    return fail(error);
   }
-
-  return ok({ groupId });
 };
 
 const dispatch = async (event) => {

@@ -1,6 +1,6 @@
 <view class="page-container">
-  <view class="title">题目列表</view>
-  <view class="top_tip">当前用户：{{currentUser.role || '未同步'}}。普通用户只能浏览题目，管理员可以增删改查。</view>
+  <view class="title">题库管理</view>
+  <view class="top_tip">当前用户：{{currentUser.role || '未同步'}}。管理员可访问分页预览列表，详情在弹窗中按需加载并缓存。</view>
 
   <view class="summary-card">
     <view class="summary-row">
@@ -14,86 +14,109 @@
   </view>
 
   <view class="toolbar">
-    <view class="btn-full toolbar-btn" bindtap="refreshCurrentUser" loading="{{loadingUser}}">刷新用户</view>
-    <view class="btn-full toolbar-btn" bindtap="refreshQuestions" loading="{{loadingQuestions}}">刷新题目</view>
-    <view class="btn-full toolbar-btn" wx:if="{{isAdmin}}" bindtap="openCreateQuestion">新增题目</view>
+    <button class="btn-full toolbar-btn" bindtap="refreshCurrentUser" loading="{{loadingUser}}">刷新用户</button>
+    <button class="btn-full toolbar-btn" wx:if="{{isAdmin}}" bindtap="refreshQuestionSummaries" loading="{{loadingQuestions}}">刷新列表</button>
+    <button class="btn-full toolbar-btn" wx:if="{{isAdmin}}" bindtap="openCreateQuestion">新增题目</button>
   </view>
 
-  <view class="empty-state" wx:if="{{!questions.length && !loadingQuestions}}">暂无题目数据，请先初始化集合并由管理员新增题目。</view>
+  <view class="empty-state" wx:if="{{!isAdmin && userLoaded}}">
+    当前账号不是管理员，题目总列表已隐藏。管理员身份同步后可查看分页预览与详情。
+  </view>
 
-  <view class="question-list" wx:if="{{questions.length}}">
-    <view class="question-card" wx:for="{{questions}}" wx:key="questionId" wx:for-item="question">
-      <view class="question-header">
-        <view>
-          <view class="question-id">{{question.questionId}}</view>
-          <view class="question-meta">
-            <text wx:if="{{question.entryMode === 'grouped'}}" class="tag tag-strong">关联题</text>
-            <text wx:if="{{question.entryMode === 'single'}}" class="tag">单题</text>
-            <text wx:if="{{question.entryMode === 'grouped'}}" class="tag">组序 {{question.groupOrder}}</text>
-            <text wx:if="{{question.groupId}}" class="tag">groupId: {{question.groupId}}</text>
+  <view class="empty-state" wx:if="{{isAdmin && initialLoading}}">
+    正在加载题目预览列表...
+  </view>
+
+  <view class="empty-state" wx:if="{{isAdmin && listLoaded && !questionSummaries.length && !initialLoading}}">
+    暂无题目数据，请先由管理员新增题目。
+  </view>
+
+  <view class="question-list" wx:if="{{isAdmin && questionSummaries.length}}">
+    <view class="question-card summary-question-card" wx:for="{{questionSummaries}}" wx:key="summaryId" wx:for-item="question">
+      <view wx:if="{{question.entityType === 'single'}}">
+        <view class="question-header">
+          <view class="summary-main">
+            <view class="question-id">{{question.questionId}}</view>
+            <view class="question-meta">
+              <text class="tag">单题</text>
+              <text class="tag">{{question.preview.optionModeLabel}}</text>
+              <text class="tag" wx:if="{{question.preview.hasStemImage}}">有图</text>
+              <text class="tag">更新于 {{question.updateTimeText}}</text>
+            </view>
+          </view>
+          <view class="question-actions">
+            <button size="mini" bindtap="viewQuestionDetail" data-questionid="{{question.questionId}}" data-version="{{question.version}}">详情</button>
+            <button size="mini" wx:if="{{isAdmin}}" bindtap="openEditQuestion" data-questionid="{{question.questionId}}" data-version="{{question.version}}">编辑</button>
+            <button size="mini" type="warn" wx:if="{{isAdmin}}" loading="{{deletingQuestionId === question.questionId}}" bindtap="deleteQuestion" data-questionid="{{question.questionId}}">删除</button>
           </view>
         </view>
-        <view class="question-actions">
-          <button size="mini" bindtap="viewQuestionDetail" data-questionid="{{question.questionId}}" data-groupid="{{question.groupId}}">详情</button>
-          <button size="mini" wx:if="{{isAdmin}}" bindtap="openEditQuestion" data-questionid="{{question.questionId}}" data-groupid="{{question.groupId}}">编辑</button>
-          <button size="mini" type="warn" wx:if="{{isAdmin}}" loading="{{deletingQuestionId === question.questionId}}" bindtap="deleteQuestion" data-questionid="{{question.questionId}}">删除</button>
+        <view class="summary-preview-card">{{question.preview.stemText}}</view>
+        <view class="summary-extra">
+          <text class="summary-extra-text">选项：{{question.preview.optionKeysText}}</text>
         </view>
       </view>
 
-      <view wx:if="{{question.entryMode === 'grouped'}}">
-        <view class="section-title">公共题干</view>
-        <view wx:if="{{question.sharedStem.sourceType === 'text'}}" class="stem-text-card">{{question.sharedStem.text}}</view>
-        <view wx:if="{{question.sharedStem.sourceType === 'image'}}" class="content-image-list">
-          <view class="content-image-item" wx:for="{{question.sharedStem.imageFileIds}}" wx:key="*this">
-            <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-questionid="{{question.questionId}}" data-groupid="{{question.groupId}}"></image>
+      <view wx:if="{{question.entityType === 'group'}}">
+        <view class="question-header">
+          <view class="summary-main">
+            <view class="question-id">{{question.groupId}}</view>
+            <view class="question-meta">
+              <text class="tag tag-strong">题组</text>
+              <text class="tag">{{question.childCount}} 个子题</text>
+              <text class="tag" wx:if="{{question.sharedStemPreview.hasStemImage}}">公共题干有图</text>
+              <text class="tag">更新于 {{question.updateTimeText}}</text>
+            </view>
+          </view>
+          <view class="question-actions">
+            <button size="mini" bindtap="toggleGroupExpanded" data-groupid="{{question.groupId}}">
+              {{question.isExpanded ? '收起' : '展开'}}
+            </button>
+            <button size="mini" wx:if="{{isAdmin}}" bindtap="openEditQuestion" data-groupid="{{question.groupId}}" data-version="{{question.version}}">编辑题组</button>
+            <button size="mini" type="warn" wx:if="{{isAdmin}}" loading="{{deletingQuestionId === question.groupId}}" bindtap="deleteQuestionGroup" data-groupid="{{question.groupId}}">删除题组</button>
+          </view>
+        </view>
+        <view class="summary-preview-card">{{question.sharedStemPreview.stemText}}</view>
+
+        <view class="group-preview-list" wx:if="{{question.isExpanded}}">
+          <view class="group-preview-item" wx:for="{{question.childrenPreview}}" wx:key="questionId" wx:for-item="child">
+            <view class="group-preview-main">
+              <view class="group-preview-title">第 {{child.groupOrder}} 题 {{child.questionId}}</view>
+              <view class="question-meta">
+                <text class="tag">{{child.preview.optionModeLabel}}</text>
+                <text class="tag" wx:if="{{child.preview.hasStemImage}}">有图</text>
+                <text class="tag">选项 {{child.preview.optionKeysText}}</text>
+              </view>
+              <view class="group-preview-text">{{child.preview.stemText}}</view>
+            </view>
+            <view class="group-preview-actions">
+              <button size="mini" bindtap="viewQuestionDetail" data-questionid="{{child.questionId}}" data-groupid="{{question.groupId}}" data-version="{{question.version}}">详情</button>
+            </view>
           </view>
         </view>
       </view>
-
-      <view class="section-title">题干</view>
-      <view wx:if="{{question.stem.sourceType === 'text'}}" class="stem-text-card">{{question.stem.text}}</view>
-      <view wx:if="{{question.stem.sourceType === 'image'}}" class="content-image-list">
-        <view class="content-image-item" wx:for="{{question.stem.imageFileIds}}" wx:key="*this">
-          <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-questionid="{{question.questionId}}" data-groupid="{{question.groupId}}"></image>
-        </view>
-      </view>
-
-      <view class="section-title">选项</view>
-      <view wx:if="{{question.optionMode === 'per_option'}}" class="option-list">
-        <view class="option-card" wx:for="{{question.options.items}}" wx:key="key" wx:for-item="option">
-          <view class="option-key">{{option.key}}</view>
-          <view wx:if="{{option.sourceType === 'text'}}" class="option-text-card">{{option.text}}</view>
-          <image wx:if="{{option.sourceType === 'image' && option.imageFileId}}" class="option-image clickable-image" mode="widthFix" src="{{option.imageFileId}}" bindtap="previewQuestionImages" data-src="{{option.imageFileId}}" data-questionid="{{question.questionId}}" data-groupid="{{question.groupId}}"></image>
-        </view>
-      </view>
-      <view wx:if="{{question.optionMode === 'grouped_asset'}}">
-        <image wx:if="{{question.options.groupedAsset.imageFileId}}" class="preview-image clickable-image" mode="widthFix" src="{{question.options.groupedAsset.imageFileId}}" bindtap="previewQuestionImages" data-src="{{question.options.groupedAsset.imageFileId}}" data-questionid="{{question.questionId}}" data-groupid="{{question.groupId}}"></image>
-        <view class="chip-list">
-          <view class="chip" wx:for="{{question.options.keys}}" wx:key="*this">{{item}}</view>
-        </view>
-      </view>
-
-      <view class="answer-row" wx:if="{{isAdmin}}">正确答案：{{question.correctOptionText}}</view>
     </view>
+  </view>
+
+  <view class="list-footer" wx:if="{{isAdmin && questionSummaries.length}}">
+    <view class="footer-text" wx:if="{{loadingMore}}">正在加载更多题目...</view>
+    <view class="footer-text" wx:if="{{!loadingMore && listHasMore}}">上拉继续加载更多</view>
+    <view class="footer-text" wx:if="{{!loadingMore && !listHasMore}}">已经到底了</view>
   </view>
 
   <view class="modal-mask" wx:if="{{showDetailModal}}">
     <view class="detail-modal">
       <view class="modal-title">题目详情</view>
+      <view class="detail-hint-row">
+        <text class="detail-hint">数据来源：{{selectedDetailSource === 'cache' ? '本地缓存' : '网络最新'}}</text>
+      </view>
+
       <view wx:if="{{selectedDetailType === 'single'}}">
         <view class="detail-question-id">题目 ID：{{selectedDetail.questionId}}</view>
-        <view wx:if="{{selectedDetail.entryMode === 'grouped'}}" class="section-title">公共题干</view>
-        <view wx:if="{{selectedDetail.entryMode === 'grouped' && selectedDetail.sharedStem.sourceType === 'text'}}" class="stem-text-card">{{selectedDetail.sharedStem.text}}</view>
-        <view wx:if="{{selectedDetail.entryMode === 'grouped' && selectedDetail.sharedStem.sourceType === 'image'}}" class="content-image-list">
-          <view class="content-image-item" wx:for="{{selectedDetail.sharedStem.imageFileIds}}" wx:key="*this">
-            <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-questionid="{{selectedDetail.questionId}}" data-groupid="{{selectedDetail.groupId}}"></image>
-          </view>
-        </view>
         <view class="section-title">题干</view>
         <view wx:if="{{selectedDetail.stem.sourceType === 'text'}}" class="stem-text-card">{{selectedDetail.stem.text}}</view>
         <view wx:if="{{selectedDetail.stem.sourceType === 'image'}}" class="content-image-list">
           <view class="content-image-item" wx:for="{{selectedDetail.stem.imageFileIds}}" wx:key="*this">
-            <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-questionid="{{selectedDetail.questionId}}" data-groupid="{{selectedDetail.groupId}}"></image>
+            <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-questionid="{{selectedDetail.questionId}}"></image>
           </view>
         </view>
         <view class="section-title">选项</view>
@@ -101,11 +124,11 @@
           <view class="option-card" wx:for="{{selectedDetail.options.items}}" wx:key="key" wx:for-item="option">
             <view class="option-key">{{option.key}}</view>
             <view wx:if="{{option.sourceType === 'text'}}" class="option-text-card">{{option.text}}</view>
-            <image wx:if="{{option.sourceType === 'image' && option.imageFileId}}" class="option-image clickable-image" mode="widthFix" src="{{option.imageFileId}}" bindtap="previewQuestionImages" data-src="{{option.imageFileId}}" data-questionid="{{selectedDetail.questionId}}" data-groupid="{{selectedDetail.groupId}}"></image>
+            <image wx:if="{{option.sourceType === 'image' && option.imageFileId}}" class="option-image clickable-image" mode="widthFix" src="{{option.imageFileId}}" bindtap="previewQuestionImages" data-src="{{option.imageFileId}}" data-questionid="{{selectedDetail.questionId}}"></image>
           </view>
         </view>
         <view wx:if="{{selectedDetail.optionMode === 'grouped_asset'}}">
-          <image wx:if="{{selectedDetail.options.groupedAsset.imageFileId}}" class="preview-image clickable-image" mode="widthFix" src="{{selectedDetail.options.groupedAsset.imageFileId}}" bindtap="previewQuestionImages" data-src="{{selectedDetail.options.groupedAsset.imageFileId}}" data-questionid="{{selectedDetail.questionId}}" data-groupid="{{selectedDetail.groupId}}"></image>
+          <image wx:if="{{selectedDetail.options.groupedAsset.imageFileId}}" class="preview-image clickable-image" mode="widthFix" src="{{selectedDetail.options.groupedAsset.imageFileId}}" bindtap="previewQuestionImages" data-src="{{selectedDetail.options.groupedAsset.imageFileId}}" data-questionid="{{selectedDetail.questionId}}"></image>
           <view class="chip-list">
             <view class="chip" wx:for="{{selectedDetail.options.keys}}" wx:key="*this">{{item}}</view>
           </view>
@@ -118,35 +141,42 @@
         <view class="section-title">公共题干</view>
         <view wx:if="{{selectedDetail.sharedStem.sourceType === 'text'}}" class="stem-text-card">{{selectedDetail.sharedStem.text}}</view>
         <view wx:if="{{selectedDetail.sharedStem.sourceType === 'image'}}" class="content-image-list">
-          <view class="content-image-item" wx:for="{{selectedDetail.sharedStem.imageFileIds}}" wx:key="*this" wx:for-index="imgIndex">
+          <view class="content-image-item" wx:for="{{selectedDetail.sharedStem.imageFileIds}}" wx:key="*this">
             <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-groupid="{{selectedDetail.groupId}}"></image>
           </view>
         </view>
-        <view class="section-title">子题</view>
-        <view class="question-card question-card-inner" wx:for="{{selectedDetail.children}}" wx:key="questionId" wx:for-item="child">
-          <view class="question-id">第 {{child.groupOrder}} 题 {{child.questionId}}</view>
+
+        <view class="section-title">子题切换</view>
+        <scroll-view class="detail-child-tabs" scroll-x>
+          <view class="detail-child-tab {{item.isActive ? 'detail-child-tab-active' : ''}}" wx:for="{{detailChildTabs}}" wx:key="questionId" bindtap="switchDetailChild" data-questionid="{{item.questionId}}">
+            {{item.label}}
+          </view>
+        </scroll-view>
+
+        <view wx:if="{{selectedDetailActiveChild}}">
+          <view class="detail-question-id detail-question-id-inner">题目 ID：{{selectedDetailActiveChild.questionId}}</view>
           <view class="section-title">题干</view>
-          <view wx:if="{{child.stem.sourceType === 'text'}}" class="stem-text-card">{{child.stem.text}}</view>
-          <view wx:if="{{child.stem.sourceType === 'image'}}" class="content-image-list">
-            <view class="content-image-item" wx:for="{{child.stem.imageFileIds}}" wx:key="*this" wx:for-index="imgIndex">
-              <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-questionid="{{child.questionId}}" data-groupid="{{child.groupId}}"></image>
+          <view wx:if="{{selectedDetailActiveChild.stem.sourceType === 'text'}}" class="stem-text-card">{{selectedDetailActiveChild.stem.text}}</view>
+          <view wx:if="{{selectedDetailActiveChild.stem.sourceType === 'image'}}" class="content-image-list">
+            <view class="content-image-item" wx:for="{{selectedDetailActiveChild.stem.imageFileIds}}" wx:key="*this">
+              <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-questionid="{{selectedDetailActiveChild.questionId}}" data-groupid="{{selectedDetail.groupId}}"></image>
             </view>
           </view>
           <view class="section-title">选项</view>
-          <view wx:if="{{child.optionMode === 'per_option'}}" class="option-list">
-            <view class="option-card" wx:for="{{child.options.items}}" wx:key="key" wx:for-item="option">
+          <view wx:if="{{selectedDetailActiveChild.optionMode === 'per_option'}}" class="option-list">
+            <view class="option-card" wx:for="{{selectedDetailActiveChild.options.items}}" wx:key="key" wx:for-item="option">
               <view class="option-key">{{option.key}}</view>
               <view wx:if="{{option.sourceType === 'text'}}" class="option-text-card">{{option.text}}</view>
-              <image wx:if="{{option.sourceType === 'image' && option.imageFileId}}" class="option-image clickable-image" mode="widthFix" src="{{option.imageFileId}}" bindtap="previewQuestionImages" data-src="{{option.imageFileId}}" data-questionid="{{child.questionId}}" data-groupid="{{child.groupId}}"></image>
+              <image wx:if="{{option.sourceType === 'image' && option.imageFileId}}" class="option-image clickable-image" mode="widthFix" src="{{option.imageFileId}}" bindtap="previewQuestionImages" data-src="{{option.imageFileId}}" data-questionid="{{selectedDetailActiveChild.questionId}}" data-groupid="{{selectedDetail.groupId}}"></image>
             </view>
           </view>
-          <view wx:if="{{child.optionMode === 'grouped_asset'}}">
-            <image wx:if="{{child.options.groupedAsset.imageFileId}}" class="preview-image clickable-image" mode="widthFix" src="{{child.options.groupedAsset.imageFileId}}" bindtap="previewQuestionImages" data-src="{{child.options.groupedAsset.imageFileId}}" data-questionid="{{child.questionId}}" data-groupid="{{child.groupId}}"></image>
+          <view wx:if="{{selectedDetailActiveChild.optionMode === 'grouped_asset'}}">
+            <image wx:if="{{selectedDetailActiveChild.options.groupedAsset.imageFileId}}" class="preview-image clickable-image" mode="widthFix" src="{{selectedDetailActiveChild.options.groupedAsset.imageFileId}}" bindtap="previewQuestionImages" data-src="{{selectedDetailActiveChild.options.groupedAsset.imageFileId}}" data-questionid="{{selectedDetailActiveChild.questionId}}" data-groupid="{{selectedDetail.groupId}}"></image>
             <view class="chip-list">
-              <view class="chip" wx:for="{{child.options.keys}}" wx:key="*this">{{item}}</view>
+              <view class="chip" wx:for="{{selectedDetailActiveChild.options.keys}}" wx:key="*this">{{item}}</view>
             </view>
           </view>
-          <view class="answer-row" wx:if="{{isAdmin}}">正确答案：{{child.correctOptionText}}</view>
+          <view class="answer-row" wx:if="{{isAdmin}}">正确答案：{{selectedDetailActiveChild.correctOptionText}}</view>
         </view>
       </view>
 
@@ -175,7 +205,7 @@
         <view wx:if="{{editorForm.single.stem.sourceType === 'image'}}">
           <view class="btn-full secondary-btn" bindtap="uploadStemImages">上传题干图片</view>
           <view class="content-image-list">
-          <view class="content-image-item" wx:for="{{editorForm.single.stem.imageFileIds}}" wx:key="*this" wx:for-index="imgIndex">
+            <view class="content-image-item" wx:for="{{editorForm.single.stem.imageFileIds}}" wx:key="*this" wx:for-index="imgIndex">
               <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewSingleImage" data-src="{{item}}"></image>
               <view class="mini-actions"><button size="mini" type="warn" bindtap="removeStemImage" data-index="{{imgIndex}}">删除</button></view>
             </view>

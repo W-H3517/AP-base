@@ -356,7 +356,66 @@ const getQuestionsByGroupId = async (groupId) => {
   });
 };
 
-const stripQuestionByRole = (question, role) => {
+const getSingleQuestionVersion = (question) =>
+  String(Number(question?.updateTime || 0));
+
+const getGroupVersion = (questions) =>
+  String(
+    (questions || []).reduce(
+      (maxVersion, question) => Math.max(maxVersion, Number(question?.updateTime || 0)),
+      0,
+    ),
+  );
+
+const buildStemPreview = (content) => {
+  const imageFileIds = Array.isArray(content?.imageFileIds)
+    ? content.imageFileIds.map((item) => normalizeString(item)).filter(Boolean)
+    : [];
+
+  return {
+    stemText:
+      normalizeString(content?.sourceType) === CONTENT_SOURCE_TEXT
+        ? normalizeString(content?.text)
+        : "",
+    hasStemImage: imageFileIds.length > 0,
+  };
+};
+
+const buildQuestionPreview = (question) => ({
+  ...buildStemPreview(question?.stem),
+  optionMode: question?.optionMode || OPTION_MODE_PER_OPTION,
+  optionKeys: Array.isArray(question?.options?.keys)
+    ? question.options.keys.map((item) => normalizeUpperString(item)).filter(Boolean)
+    : [],
+});
+
+const decodeCursor = (cursor) => {
+  const normalized = normalizeString(cursor);
+  if (!normalized) {
+    return 0;
+  }
+
+  try {
+    const decoded = JSON.parse(Buffer.from(normalized, "base64").toString("utf8"));
+    const offset = Number(decoded?.offset);
+    return Number.isInteger(offset) && offset >= 0 ? offset : 0;
+  } catch (error) {
+    return 0;
+  }
+};
+
+const encodeCursor = (offset) =>
+  Buffer.from(JSON.stringify({ offset }), "utf8").toString("base64");
+
+const normalizeListLimit = (limit) => {
+  const parsed = Number(limit);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 20;
+  }
+  return Math.min(Math.floor(parsed), 100);
+};
+
+const stripQuestionByRole = (question, role, version = getSingleQuestionVersion(question)) => {
   if (!question) {
     return null;
   }
@@ -386,8 +445,9 @@ const stripQuestionByRole = (question, role) => {
           sourceType: CONTENT_SOURCE_IMAGE,
           imageFileId: "",
         },
-      },
+    },
     groupOrder: Number(question.groupOrder || 1),
+    version,
     createTime: question.createTime,
     updateTime: question.updateTime,
   };
@@ -402,6 +462,105 @@ const stripQuestionByRole = (question, role) => {
   }
 
   return base;
+};
+
+const buildSingleQuestionSummary = (question) => ({
+  entityType: "single",
+  questionId: question.questionId,
+  groupId: "",
+  questionType: question.questionType || QUESTION_TYPE_CHOICE,
+  entryMode: ENTRY_MODE_SINGLE,
+  preview: buildQuestionPreview(question),
+  version: getSingleQuestionVersion(question),
+  createTime: question.createTime,
+  updateTime: question.updateTime,
+});
+
+const buildGroupChildPreview = (question, version) => ({
+  questionId: question.questionId,
+  groupId: normalizeString(question.groupId),
+  groupOrder: Number(question.groupOrder || 1),
+  questionType: question.questionType || QUESTION_TYPE_CHOICE,
+  entryMode: ENTRY_MODE_GROUPED,
+  preview: buildQuestionPreview(question),
+  version,
+  createTime: question.createTime,
+  updateTime: question.updateTime,
+});
+
+const buildGroupSummary = (questions) => {
+  const sortedQuestions = [...questions].sort((left, right) => {
+    const leftOrder = Number(left?.groupOrder || 0);
+    const rightOrder = Number(right?.groupOrder || 0);
+    return leftOrder - rightOrder;
+  });
+  const firstQuestion = sortedQuestions[0] || {};
+  const version = getGroupVersion(sortedQuestions);
+
+  return {
+    entityType: "group",
+    groupId: normalizeString(firstQuestion.groupId),
+    questionType: firstQuestion.questionType || QUESTION_TYPE_CHOICE,
+    entryMode: ENTRY_MODE_GROUPED,
+    sharedStemPreview: buildStemPreview(firstQuestion.sharedStem),
+    childCount: sortedQuestions.length,
+    childrenPreview: sortedQuestions.map((question) =>
+      buildGroupChildPreview(question, version),
+    ),
+    version,
+    createTime: sortedQuestions.reduce((minTime, question) => {
+      const createTime = Number(question?.createTime || 0);
+      if (!minTime) {
+        return createTime;
+      }
+      return Math.min(minTime, createTime);
+    }, 0),
+    updateTime: sortedQuestions.reduce(
+      (maxTime, question) => Math.max(maxTime, Number(question?.updateTime || 0)),
+      0,
+    ),
+  };
+};
+
+const buildQuestionSummaryEntities = (questions) => {
+  const groupedMap = new Map();
+  const entities = [];
+
+  sortQuestions(questions || []).forEach((question) => {
+    const entryMode = question?.entryMode || ENTRY_MODE_SINGLE;
+    if (entryMode === ENTRY_MODE_GROUPED && normalizeString(question?.groupId)) {
+      const groupId = normalizeString(question.groupId);
+      if (!groupedMap.has(groupId)) {
+        groupedMap.set(groupId, []);
+      }
+      groupedMap.get(groupId).push(question);
+      return;
+    }
+
+    entities.push({
+      sortCreateTime: Number(question?.createTime || 0),
+      sortGroupOrder: Number(question?.groupOrder || 0),
+      data: buildSingleQuestionSummary(question),
+    });
+  });
+
+  groupedMap.forEach((groupQuestions) => {
+    const summary = buildGroupSummary(groupQuestions);
+    entities.push({
+      sortCreateTime: Number(summary.createTime || 0),
+      sortGroupOrder: 0,
+      data: summary,
+    });
+  });
+
+  return entities
+    .sort((left, right) => {
+      if (left.sortCreateTime !== right.sortCreateTime) {
+        return right.sortCreateTime - left.sortCreateTime;
+      }
+      return left.sortGroupOrder - right.sortGroupOrder;
+    })
+    .map((item) => item.data);
 };
 
 const getEventPayload = (event) => {
@@ -428,6 +587,28 @@ const listQuestions = async () => {
   );
 };
 
+const listQuestionSummaries = async (event) => {
+  await requireAdmin();
+  const payload = getEventPayload(event);
+  const limit = normalizeListLimit(payload?.limit);
+  const offset = decodeCursor(payload?.cursor);
+
+  // keyword is intentionally accepted as a forward-compatible placeholder for later search support.
+  normalizeString(payload?.keyword);
+
+  const resp = await db.collection(QUESTIONS_COLLECTION).get();
+  const entities = buildQuestionSummaryEntities(resp.data || []);
+  const list = entities.slice(offset, offset + limit);
+  const nextOffset = offset + list.length;
+  const hasMore = nextOffset < entities.length;
+
+  return ok({
+    list,
+    nextCursor: hasMore ? encodeCursor(nextOffset) : "",
+    hasMore,
+  });
+};
+
 const getQuestionDetail = async (event) => {
   const user = await ensureUserRecord();
   const questionId = normalizeString(event?.data?.questionId || event?.questionId);
@@ -438,7 +619,7 @@ const getQuestionDetail = async (event) => {
   if (!question) {
     return fail("题目不存在");
   }
-  return ok(stripQuestionByRole(question, user.role));
+  return ok(stripQuestionByRole(question, user.role, getSingleQuestionVersion(question)));
 };
 
 const getQuestionGroupDetail = async (event) => {
@@ -451,14 +632,16 @@ const getQuestionGroupDetail = async (event) => {
   if (!questions.length) {
     return fail("题组不存在");
   }
+  const version = getGroupVersion(questions);
   return ok({
     groupId,
     entryMode: ENTRY_MODE_GROUPED,
+    version,
     sharedStem:
       questions[0].sharedStem && Object.keys(questions[0].sharedStem).length
         ? questions[0].sharedStem
         : {},
-    children: questions.map((question) => stripQuestionByRole(question, user.role)),
+    children: questions.map((question) => stripQuestionByRole(question, user.role, version)),
   });
 };
 
@@ -649,10 +832,31 @@ const deleteQuestion = async (event) => {
   return ok({ questionId });
 };
 
+const deleteQuestionGroup = async (event) => {
+  await requireAdmin();
+  const groupId = normalizeString(event?.data?.groupId || event?.groupId);
+  if (!groupId) {
+    return fail("groupId 不能为空");
+  }
+
+  const existingQuestions = await getQuestionsByGroupId(groupId);
+  if (!existingQuestions.length) {
+    return fail("题组不存在");
+  }
+
+  for (const question of existingQuestions) {
+    await db.collection(QUESTIONS_COLLECTION).doc(question._id).remove();
+  }
+
+  return ok({ groupId });
+};
+
 const dispatch = async (event) => {
   switch (event.type) {
     case "listQuestions":
       return listQuestions();
+    case "listQuestionSummaries":
+      return listQuestionSummaries(event);
     case "getQuestionDetail":
       return getQuestionDetail(event);
     case "getQuestionGroupDetail":
@@ -665,6 +869,8 @@ const dispatch = async (event) => {
       return createQuestionGroup(event);
     case "updateQuestionGroup":
       return updateQuestionGroup(event);
+    case "deleteQuestionGroup":
+      return deleteQuestionGroup(event);
     case "deleteQuestion":
       return deleteQuestion(event);
     default:

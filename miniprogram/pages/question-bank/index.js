@@ -2,6 +2,9 @@ const QUESTION_CLOUD_FUNCTION_NAME = "questionService";
 const USER_CLOUD_FUNCTION_NAME = "userService";
 const QUESTION_TYPE = "choice";
 const OPTION_KEY_POOL = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+const QUESTION_SUMMARY_PAGE_SIZE = 20;
+const SINGLE_DETAIL_CACHE_PREFIX = "question_detail:";
+const GROUP_DETAIL_CACHE_PREFIX = "question_group_detail:";
 
 function getCloudEnv() {
   const app = getApp();
@@ -34,6 +37,10 @@ function normalizeOptionMode(value) {
 
 function normalizeEntryMode(value) {
   return value === "grouped" ? "grouped" : "single";
+}
+
+function normalizeEntityType(value) {
+  return value === "group" ? "group" : "single";
 }
 
 function createRichContent(defaultSourceType = "text") {
@@ -247,6 +254,163 @@ function normalizeCheckboxKeys(keys) {
     .filter(Boolean);
 }
 
+function normalizeVersion(value) {
+  const stringValue = normalizeString(value);
+  if (stringValue) {
+    return stringValue;
+  }
+  return String(Number(value || 0));
+}
+
+function formatTime(value) {
+  const date = new Date(Number(value || 0));
+  if (Number.isNaN(date.getTime()) || !Number(value)) {
+    return "未知";
+  }
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const hh = String(date.getHours()).padStart(2, "0");
+  const min = String(date.getMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+}
+
+function getOptionModeLabel(optionMode) {
+  return normalizeOptionMode(optionMode) === "grouped_asset" ? "大图模式" : "独立选项";
+}
+
+function getSummaryStemText(text, fallback) {
+  const normalized = normalizeString(text);
+  return normalized || fallback;
+}
+
+function normalizeQuestionPreview(preview) {
+  const source = isPlainObject(preview) ? preview : {};
+  const optionKeys = normalizeArray(source.optionKeys)
+    .map((item) => normalizeString(item).toUpperCase())
+    .filter(Boolean);
+  const optionMode = normalizeOptionMode(source.optionMode);
+  return {
+    stemText: getSummaryStemText(source.stemText, "暂无题干摘要"),
+    hasStemImage: !!source.hasStemImage,
+    optionMode,
+    optionModeLabel: getOptionModeLabel(optionMode),
+    optionKeys,
+    optionKeysText: optionKeys.length ? optionKeys.join(" / ") : "暂无选项",
+  };
+}
+
+function normalizeGroupChildPreview(child) {
+  const source = isPlainObject(child) ? child : {};
+  return {
+    questionId: normalizeString(source.questionId),
+    groupId: normalizeString(source.groupId),
+    groupOrder: Number(source.groupOrder || 1),
+    questionType: normalizeString(source.questionType) || QUESTION_TYPE,
+    entryMode: "grouped",
+    preview: normalizeQuestionPreview(source.preview),
+    version: normalizeVersion(source.version),
+    createTime: source.createTime || 0,
+    updateTime: source.updateTime || 0,
+    updateTimeText: formatTime(source.updateTime),
+  };
+}
+
+function normalizeSingleSummary(entity) {
+  const source = isPlainObject(entity) ? entity : {};
+  const questionId = normalizeString(source.questionId);
+  return {
+    summaryId: questionId,
+    entityType: "single",
+    questionId,
+    groupId: "",
+    questionType: normalizeString(source.questionType) || QUESTION_TYPE,
+    entryMode: "single",
+    preview: normalizeQuestionPreview(source.preview),
+    version: normalizeVersion(source.version),
+    createTime: source.createTime || 0,
+    updateTime: source.updateTime || 0,
+    updateTimeText: formatTime(source.updateTime),
+  };
+}
+
+function normalizeGroupSummary(entity) {
+  const source = isPlainObject(entity) ? entity : {};
+  const groupId = normalizeString(source.groupId);
+  const childrenPreview = normalizeArray(source.childrenPreview).map((item) =>
+    normalizeGroupChildPreview(item)
+  );
+  return {
+    summaryId: groupId,
+    entityType: "group",
+    groupId,
+    questionType: normalizeString(source.questionType) || QUESTION_TYPE,
+    entryMode: "grouped",
+    sharedStemPreview: {
+      stemText: getSummaryStemText(source.sharedStemPreview && source.sharedStemPreview.stemText, "暂无公共题干摘要"),
+      hasStemImage: !!(source.sharedStemPreview && source.sharedStemPreview.hasStemImage),
+    },
+    childCount: Number(source.childCount || childrenPreview.length || 0),
+    childrenPreview,
+    version: normalizeVersion(source.version),
+    createTime: source.createTime || 0,
+    updateTime: source.updateTime || 0,
+    updateTimeText: formatTime(source.updateTime),
+  };
+}
+
+function normalizeQuestionSummaryEntity(entity) {
+  return normalizeEntityType(entity && entity.entityType) === "group"
+    ? normalizeGroupSummary(entity)
+    : normalizeSingleSummary(entity);
+}
+
+function assignObject(target) {
+  const result = target || {};
+  for (let i = 1; i < arguments.length; i += 1) {
+    const source = arguments[i];
+    if (!source) {
+      continue;
+    }
+    const keys = Object.keys(source);
+    for (let j = 0; j < keys.length; j += 1) {
+      result[keys[j]] = source[keys[j]];
+    }
+  }
+  return result;
+}
+
+function appendArrays(left, right) {
+  return normalizeArray(left).concat(normalizeArray(right));
+}
+
+function uniqueArray(values) {
+  return Array.from(new Set(normalizeArray(values)));
+}
+
+function decorateQuestionSummaryEntity(entity, expandedGroupIds = []) {
+  const source = isPlainObject(entity) ? entity : {};
+  if (source.entityType === "group") {
+    return assignObject({}, source, {
+      isExpanded: expandedGroupIds.includes(source.groupId),
+    });
+  }
+  return source;
+}
+
+function decorateQuestionSummaries(list, expandedGroupIds = []) {
+  return normalizeArray(list).map((item) => decorateQuestionSummaryEntity(item, expandedGroupIds));
+}
+
+function buildDetailChildTabs(children, activeQuestionId) {
+  const normalizedActiveId = normalizeString(activeQuestionId);
+  return normalizeArray(children).map((child) => ({
+    questionId: child.questionId,
+    label: `第 ${child.groupOrder} 题`,
+    isActive: child.questionId === normalizedActiveId,
+  }));
+}
+
 function getAnswerText(question) {
   const keys = normalizeCheckboxKeys(question && question.correctOptionKeys);
   return keys.length ? keys.join(", ") : "暂无";
@@ -272,7 +436,7 @@ function getQuestionImageUrls(question) {
     getQuestionImageUrls(child).forEach((url) => urls.push(url));
   });
 
-  return [...new Set(urls.filter(Boolean))];
+  return uniqueArray(urls.filter(Boolean));
 }
 
 function normalizeQuestionItem(question, isAdmin) {
@@ -289,6 +453,7 @@ function normalizeQuestionItem(question, isAdmin) {
     stem: normalizeRichContent(source.stem, source.stemImageFileId),
     optionMode: normalizeOptionMode(source.optionMode),
     options: normalizeOptions(source.options),
+    version: normalizeVersion(source.version),
     createTime: source.createTime,
     updateTime: source.updateTime,
     createdBy: source.createdBy || "",
@@ -311,13 +476,12 @@ function normalizeQuestionGroupDetail(group, isAdmin) {
     : normalizeArray(source.questions);
   const children = childrenSource.map((child, index) =>
     normalizeQuestionItem(
-      {
-        ...child,
+      assignObject({}, child, {
         entryMode: "grouped",
         groupId: normalizeString(source.groupId || child.groupId),
         groupOrder: Number(child.groupOrder || index + 1),
         sharedStem: child.sharedStem || sharedStem,
-      },
+      }),
       isAdmin
     )
   );
@@ -325,6 +489,7 @@ function normalizeQuestionGroupDetail(group, isAdmin) {
   return {
     groupId: normalizeString(source.groupId),
     entryMode: "grouped",
+    version: normalizeVersion(source.version),
     sharedStem,
     children,
     createTime: source.createTime,
@@ -387,6 +552,8 @@ Page({
     content: "",
     loadingUser: false,
     loadingQuestions: false,
+    initialLoading: false,
+    loadingMore: false,
     savingQuestion: false,
     deletingQuestionId: "",
     userLoaded: false,
@@ -395,9 +562,19 @@ Page({
       openid: "",
       role: "",
     },
-    questions: [],
+    questionSummaries: [],
+    listCursor: "",
+    listHasMore: false,
+    listLoaded: false,
+    expandedGroupIds: [],
     selectedDetail: null,
     selectedDetailType: "single",
+    selectedDetailSource: "network",
+    selectedDetailQuestionId: "",
+    selectedDetailGroupId: "",
+    selectedDetailActiveChildQuestionId: "",
+    selectedDetailActiveChild: null,
+    detailChildTabs: [],
     showDetailModal: false,
     showEditorModal: false,
     editorMode: "create",
@@ -406,6 +583,7 @@ Page({
   },
 
   onLoad(options) {
+    this.detailCacheMap = new Map();
     this.setData({
       type: options.type || "questions",
       mode: options.mode || "browse",
@@ -417,6 +595,19 @@ Page({
     if (this.data.userLoaded) {
       this.refreshCurrentUser(false);
     }
+  },
+
+  onPullDownRefresh() {
+    this.refreshCurrentUser(false).finally(() => {
+      wx.stopPullDownRefresh();
+    });
+  },
+
+  onReachBottom() {
+    if (!this.data.isAdmin || this.data.showEditorModal || this.data.showDetailModal) {
+      return;
+    }
+    this.loadMoreQuestionSummaries();
   },
 
   showCloudTip(title, content) {
@@ -441,10 +632,7 @@ Page({
   async callQuestionFunction(type, data) {
     const resp = await wx.cloud.callFunction({
       name: getCloudFunctionNameByType(type),
-      data: {
-        type,
-        ...(data || {}),
-      },
+      data: assignObject({ type: type }, data || {}),
     });
     return unwrapCloudResult(resp);
   },
@@ -495,7 +683,20 @@ Page({
         userLoaded: true,
         isAdmin,
       });
-      await this.refreshQuestions(false, isAdmin);
+      if (isAdmin) {
+        await this.refreshQuestionSummaries(false, isAdmin);
+      } else {
+        this.setData({
+          questionSummaries: [],
+          listCursor: "",
+          listHasMore: false,
+          listLoaded: true,
+          expandedGroupIds: [],
+          initialLoading: false,
+          loadingQuestions: false,
+          loadingMore: false,
+        });
+      }
     } catch (error) {
       const errMsg = getErrorMessage(error);
       if (isTimeoutError(errMsg)) {
@@ -516,8 +717,22 @@ Page({
     }
   },
 
-  async refreshQuestions(showLoading = true, isAdmin = this.data.isAdmin) {
+  async refreshQuestionSummaries(showLoading = true, isAdmin = this.data.isAdmin) {
     if (!this.ensureCloudEnv()) {
+      return;
+    }
+
+    if (!isAdmin) {
+      this.setData({
+        questionSummaries: [],
+        listCursor: "",
+        listHasMore: false,
+        listLoaded: true,
+        expandedGroupIds: [],
+        initialLoading: false,
+        loadingQuestions: false,
+        loadingMore: false,
+      });
       return;
     }
 
@@ -527,13 +742,23 @@ Page({
 
     this.setData({
       loadingQuestions: true,
+      initialLoading: true,
+      loadingMore: false,
     });
 
     try {
-      const result = await this.callQuestionFunction("listQuestions");
-      const list = normalizeArray(result.data);
+      const result = await this.callQuestionFunction("listQuestionSummaries", {
+        limit: QUESTION_SUMMARY_PAGE_SIZE,
+        cursor: "",
+      });
+      const data = isPlainObject(result.data) ? result.data : {};
+      const normalizedList = normalizeArray(data.list).map((item) => normalizeQuestionSummaryEntity(item));
       this.setData({
-        questions: list.map((item) => normalizeQuestionItem(item, isAdmin)),
+        questionSummaries: decorateQuestionSummaries(normalizedList, []),
+        listCursor: normalizeString(data.nextCursor),
+        listHasMore: !!data.hasMore,
+        listLoaded: true,
+        expandedGroupIds: [],
       });
     } catch (error) {
       const errMsg = getErrorMessage(error);
@@ -548,6 +773,7 @@ Page({
     } finally {
       this.setData({
         loadingQuestions: false,
+        initialLoading: false,
       });
       if (showLoading) {
         wx.hideLoading();
@@ -555,9 +781,193 @@ Page({
     }
   },
 
+  async loadMoreQuestionSummaries() {
+    if (!this.ensureCloudEnv() || !this.data.isAdmin) {
+      return;
+    }
+    if (this.data.loadingQuestions || this.data.loadingMore || !this.data.listHasMore) {
+      return;
+    }
+
+    this.setData({
+      loadingMore: true,
+    });
+
+    try {
+      const result = await this.callQuestionFunction("listQuestionSummaries", {
+        limit: QUESTION_SUMMARY_PAGE_SIZE,
+        cursor: this.data.listCursor,
+      });
+      const data = isPlainObject(result.data) ? result.data : {};
+      const nextList = normalizeArray(data.list).map((item) => normalizeQuestionSummaryEntity(item));
+      const mergedList = appendArrays(this.data.questionSummaries, nextList);
+      this.setData({
+        questionSummaries: decorateQuestionSummaries(mergedList, this.getExpandedGroupIds()),
+        listCursor: normalizeString(data.nextCursor),
+        listHasMore: !!data.hasMore,
+        listLoaded: true,
+      });
+    } catch (error) {
+      this.showCloudTip("加载更多失败", getErrorMessage(error));
+    } finally {
+      this.setData({
+        loadingMore: false,
+      });
+    }
+  },
+
+  getExpandedGroupIds() {
+    return normalizeArray(this.data.expandedGroupIds).map((item) => normalizeString(item)).filter(Boolean);
+  },
+
+  toggleGroupExpanded(e) {
+    const groupId = normalizeString(e.currentTarget.dataset.groupid);
+    if (!groupId) {
+      return;
+    }
+    const expandedGroupIds = this.getExpandedGroupIds();
+    const exists = expandedGroupIds.includes(groupId);
+    const nextExpandedGroupIds = exists
+      ? expandedGroupIds.filter((item) => item !== groupId)
+      : expandedGroupIds.concat(groupId);
+    this.setData({
+      expandedGroupIds: nextExpandedGroupIds,
+      questionSummaries: decorateQuestionSummaries(this.data.questionSummaries, nextExpandedGroupIds),
+    });
+  },
+
+  getDetailCacheKey(type, id) {
+    const normalizedId = normalizeString(id);
+    if (!normalizedId) {
+      return "";
+    }
+    return type === "group"
+      ? GROUP_DETAIL_CACHE_PREFIX + normalizedId
+      : SINGLE_DETAIL_CACHE_PREFIX + normalizedId;
+  },
+
+  getSummaryMeta(questionId, groupId) {
+    const normalizedQuestionId = normalizeString(questionId);
+    const normalizedGroupId = normalizeString(groupId);
+    const summaries = normalizeArray(this.data.questionSummaries);
+    for (let i = 0; i < summaries.length; i += 1) {
+      const item = summaries[i];
+      if (item.entityType === "single" && normalizedQuestionId && item.questionId === normalizedQuestionId) {
+        return {
+          entityType: "single",
+          version: normalizeVersion(item.version),
+          summary: item,
+        };
+      }
+      if (item.entityType === "group" && normalizedGroupId && item.groupId === normalizedGroupId) {
+        if (!normalizedQuestionId) {
+          return {
+            entityType: "group",
+            version: normalizeVersion(item.version),
+            summary: item,
+          };
+        }
+        const child = normalizeArray(item.childrenPreview).find(
+          (preview) => preview.questionId === normalizedQuestionId
+        );
+        if (child) {
+          return {
+            entityType: "group",
+            version: normalizeVersion(item.version),
+            summary: item,
+            child,
+          };
+        }
+      }
+    }
+    return {
+      entityType: normalizedGroupId ? "group" : "single",
+      version: "0",
+      summary: null,
+    };
+  },
+
+  getCachedDetail(type, id, expectedVersion) {
+    const cacheKey = this.getDetailCacheKey(type, id);
+    if (!cacheKey) {
+      return null;
+    }
+    const normalizedVersion = normalizeVersion(expectedVersion);
+    const memoryValue = this.detailCacheMap && this.detailCacheMap.get(cacheKey);
+    const cached = memoryValue || wx.getStorageSync(cacheKey);
+    if (!cached || normalizeVersion(cached.version) !== normalizedVersion) {
+      return null;
+    }
+    if (this.detailCacheMap && !memoryValue) {
+      this.detailCacheMap.set(cacheKey, cached);
+    }
+    return cached;
+  },
+
+  setCachedDetail(type, id, payload) {
+    const cacheKey = this.getDetailCacheKey(type, id);
+    if (!cacheKey) {
+      return;
+    }
+    const nextPayload = assignObject({}, payload, {
+      version: normalizeVersion(payload && payload.version),
+      cachedAt: Date.now(),
+    });
+    if (this.detailCacheMap) {
+      this.detailCacheMap.set(cacheKey, nextPayload);
+    }
+    wx.setStorageSync(cacheKey, nextPayload);
+  },
+
+  clearCachedDetail(type, id) {
+    const cacheKey = this.getDetailCacheKey(type, id);
+    if (!cacheKey) {
+      return;
+    }
+    if (this.detailCacheMap) {
+      this.detailCacheMap.delete(cacheKey);
+    }
+    wx.removeStorageSync(cacheKey);
+  },
+
+  showSingleDetail(detail, options = {}) {
+    const normalized = normalizeQuestionItem(detail, this.data.isAdmin);
+    this.setData({
+      selectedDetail: normalized,
+      selectedDetailType: "single",
+      selectedDetailSource: options.source || "network",
+      selectedDetailQuestionId: normalized.questionId,
+      selectedDetailGroupId: "",
+      selectedDetailActiveChildQuestionId: "",
+      selectedDetailActiveChild: null,
+      detailChildTabs: [],
+      showDetailModal: true,
+    });
+  },
+
+  showGroupedChildDetail(groupDetail, activeChildQuestionId, options = {}) {
+    const normalized = normalizeQuestionGroupDetail(groupDetail, this.data.isAdmin);
+    const activeChild =
+      normalizeArray(normalized.children).find(
+        (child) => child.questionId === normalizeString(activeChildQuestionId)
+      ) || normalizeArray(normalized.children)[0] || null;
+    this.setData({
+      selectedDetail: normalized,
+      selectedDetailType: "grouped",
+      selectedDetailSource: options.source || "network",
+      selectedDetailQuestionId: activeChild ? activeChild.questionId : "",
+      selectedDetailGroupId: normalized.groupId,
+      selectedDetailActiveChildQuestionId: activeChild ? activeChild.questionId : "",
+      selectedDetailActiveChild: activeChild,
+      detailChildTabs: buildDetailChildTabs(normalized.children, activeChild ? activeChild.questionId : ""),
+      showDetailModal: true,
+    });
+  },
+
   async viewQuestionDetail(e) {
-    const questionId = e.currentTarget.dataset.questionid;
-    const groupId = e.currentTarget.dataset.groupid;
+    const questionId = normalizeString(e.currentTarget.dataset.questionid);
+    const groupId = normalizeString(e.currentTarget.dataset.groupid);
+    const version = normalizeVersion(e.currentTarget.dataset.version);
     if (!this.ensureCloudEnv()) {
       return;
     }
@@ -568,23 +978,33 @@ Page({
 
     try {
       if (groupId) {
-        const result = await this.callQuestionFunction("getQuestionGroupDetail", {
-          groupId,
+        const cached = this.getCachedDetail("group", groupId, version);
+        if (cached && cached.data) {
+          this.showGroupedChildDetail(cached.data, questionId, { source: "cache" });
+          return;
+        }
+        const result = await this.callQuestionFunction("getQuestionGroupDetail", { groupId });
+        const normalized = normalizeQuestionGroupDetail(result.data || {}, this.data.isAdmin);
+        this.setCachedDetail("group", groupId, {
+          type: "group",
+          version: normalized.version,
+          data: normalized,
         });
-        this.setData({
-          selectedDetail: normalizeQuestionGroupDetail(result.data || {}, this.data.isAdmin),
-          selectedDetailType: "grouped",
-          showDetailModal: true,
-        });
+        this.showGroupedChildDetail(normalized, questionId, { source: "network" });
       } else {
-        const result = await this.callQuestionFunction("getQuestionDetail", {
-          questionId,
+        const cached = this.getCachedDetail("single", questionId, version);
+        if (cached && cached.data) {
+          this.showSingleDetail(cached.data, { source: "cache" });
+          return;
+        }
+        const result = await this.callQuestionFunction("getQuestionDetail", { questionId });
+        const normalized = normalizeQuestionItem(result.data || {}, this.data.isAdmin);
+        this.setCachedDetail("single", questionId, {
+          type: "single",
+          version: normalized.version,
+          data: normalized,
         });
-        this.setData({
-          selectedDetail: normalizeQuestionItem(result.data || {}, this.data.isAdmin),
-          selectedDetailType: "single",
-          showDetailModal: true,
-        });
+        this.showSingleDetail(normalized, { source: "network" });
       }
     } catch (error) {
       const errMsg = getErrorMessage(error);
@@ -603,6 +1023,34 @@ Page({
       showDetailModal: false,
       selectedDetail: null,
       selectedDetailType: "single",
+      selectedDetailSource: "network",
+      selectedDetailQuestionId: "",
+      selectedDetailGroupId: "",
+      selectedDetailActiveChildQuestionId: "",
+      selectedDetailActiveChild: null,
+      detailChildTabs: [],
+    });
+  },
+
+  switchDetailChild(e) {
+    const questionId = normalizeString(e.currentTarget.dataset.questionid);
+    if (!questionId || this.data.selectedDetailType !== "grouped") {
+      return;
+    }
+    const activeChild = normalizeArray(this.data.selectedDetail && this.data.selectedDetail.children).find(
+      (child) => child.questionId === questionId
+    );
+    if (!activeChild) {
+      return;
+    }
+    this.setData({
+      selectedDetailQuestionId: activeChild.questionId,
+      selectedDetailActiveChildQuestionId: activeChild.questionId,
+      selectedDetailActiveChild: activeChild,
+      detailChildTabs: buildDetailChildTabs(
+        this.data.selectedDetail && this.data.selectedDetail.children,
+        activeChild.questionId
+      ),
     });
   },
 
@@ -640,8 +1088,20 @@ Page({
       source = this.data.selectedDetail;
     }
 
+    if (!source && groupId) {
+      const cached = this.getCachedDetail("group", groupId, this.data.selectedDetail && this.data.selectedDetail.version);
+      source = cached && cached.data ? cached.data : null;
+    }
+
     if (!source && questionId) {
-      source = this.data.questions.find((item) => item.questionId === questionId);
+      const meta = this.getSummaryMeta(questionId, groupId);
+      if (meta.summary && meta.summary.entityType === "group") {
+        const cached = this.getCachedDetail("group", groupId, meta.version);
+        source = cached && cached.data ? cached.data : null;
+      } else {
+        const cached = this.getCachedDetail("single", questionId, meta.version);
+        source = cached && cached.data ? cached.data : null;
+      }
     }
 
     const urls = getQuestionImageUrls(source);
@@ -666,8 +1126,9 @@ Page({
   },
 
   async openEditQuestion(e) {
-    const questionId = e.currentTarget.dataset.questionid;
-    const groupId = e.currentTarget.dataset.groupid;
+    const questionId = normalizeString(e.currentTarget.dataset.questionid);
+    const groupId = normalizeString(e.currentTarget.dataset.groupid);
+    const version = normalizeVersion(e.currentTarget.dataset.version);
     if (!this.ensureCloudEnv()) {
       return;
     }
@@ -678,27 +1139,49 @@ Page({
 
     try {
       if (groupId) {
-        const result = await this.callQuestionFunction("getQuestionGroupDetail", {
-          groupId,
-        });
+        const cached = this.getCachedDetail("group", groupId, version);
+        const groupData = cached && cached.data
+          ? cached.data
+          : normalizeQuestionGroupDetail(
+              (await this.callQuestionFunction("getQuestionGroupDetail", { groupId })).data || {},
+              this.data.isAdmin
+            );
+        if (!cached) {
+          this.setCachedDetail("group", groupId, {
+            type: "group",
+            version: groupData.version,
+            data: groupData,
+          });
+        }
         this.setData({
           editorMode: "edit",
           editorEntryMode: "grouped",
           editorForm: {
             single: createSingleQuestionForm(),
-            grouped: normalizeEditorGroupedForm(result.data || {}),
+            grouped: normalizeEditorGroupedForm(groupData),
           },
           showEditorModal: true,
         });
       } else {
-        const result = await this.callQuestionFunction("getQuestionDetail", {
-          questionId,
-        });
+        const cached = this.getCachedDetail("single", questionId, version);
+        const questionData = cached && cached.data
+          ? cached.data
+          : normalizeQuestionItem(
+              (await this.callQuestionFunction("getQuestionDetail", { questionId })).data || {},
+              this.data.isAdmin
+            );
+        if (!cached) {
+          this.setCachedDetail("single", questionId, {
+            type: "single",
+            version: questionData.version,
+            data: questionData,
+          });
+        }
         this.setData({
           editorMode: "edit",
           editorEntryMode: "single",
           editorForm: {
-            single: normalizeEditorSingleForm(result.data || {}),
+            single: normalizeEditorSingleForm(questionData),
             grouped: createGroupedQuestionForm(),
           },
           showEditorModal: true,
@@ -726,7 +1209,7 @@ Page({
   },
 
   async deleteQuestion(e) {
-    const questionId = e.currentTarget.dataset.questionid;
+    const questionId = normalizeString(e.currentTarget.dataset.questionid);
     if (!questionId) {
       return;
     }
@@ -760,11 +1243,12 @@ Page({
       await this.callQuestionFunction("deleteQuestion", {
         questionId,
       });
+      this.clearCachedDetail("single", questionId);
       wx.showToast({
         title: "删除成功",
         icon: "success",
       });
-      await this.refreshQuestions(false);
+      await this.refreshQuestionSummaries(false);
     } catch (error) {
       const errMsg = getErrorMessage(error);
       if (isTimeoutError(errMsg)) {
@@ -774,6 +1258,69 @@ Page({
         );
       } else {
         this.showCloudTip("删除题目失败", errMsg);
+      }
+    } finally {
+      wx.hideLoading();
+      this.setData({
+        deletingQuestionId: "",
+      });
+    }
+  },
+
+  async deleteQuestionGroup(e) {
+    const groupId = normalizeString(e.currentTarget.dataset.groupid);
+    if (!groupId) {
+      return;
+    }
+
+    if (!this.data.isAdmin) {
+      this.showCloudTip("权限不足", "只有管理员才能删除题组。");
+      return;
+    }
+
+    const confirmed = await new Promise((resolve) => {
+      wx.showModal({
+        title: "确认删除",
+        content: `确定删除题组 ${groupId} 及其全部子题吗？`,
+        success: function (res) {
+          resolve(!!res.confirm);
+        },
+        fail: function () {
+          resolve(false);
+        },
+      });
+    });
+
+    if (!confirmed || !this.ensureCloudEnv()) {
+      return;
+    }
+
+    wx.showLoading({
+      title: "删除中...",
+    });
+    this.setData({
+      deletingQuestionId: groupId,
+    });
+
+    try {
+      await this.callQuestionFunction("deleteQuestionGroup", {
+        groupId: groupId,
+      });
+      this.clearCachedDetail("group", groupId);
+      wx.showToast({
+        title: "删除成功",
+        icon: "success",
+      });
+      await this.refreshQuestionSummaries(false);
+    } catch (error) {
+      const errMsg = getErrorMessage(error);
+      if (isTimeoutError(errMsg)) {
+        this.showCloudTip(
+          "删除题组超时",
+          "删除请求超时，请确认云函数状态正常后重试。"
+        );
+      } else {
+        this.showCloudTip("删除题组失败", errMsg);
       }
     } finally {
       wx.hideLoading();
@@ -843,9 +1390,7 @@ Page({
         }
         target.sourceType = "image";
         target.text = "";
-        target.imageFileIds = Array.from(
-          new Set([...(target.imageFileIds || []), ...fileIDs])
-        );
+        target.imageFileIds = uniqueArray(appendArrays(target.imageFileIds || [], fileIDs));
       });
     } catch (error) {
       this.showCloudTip("上传图片失败", getErrorMessage(error));
@@ -914,17 +1459,17 @@ Page({
 
       if (target.optionMode === "grouped_asset") {
         const nextKey = getNextOptionKey(target.options.keys);
-        target.options.keys = [...normalizeArray(target.options.keys), nextKey];
+        target.options.keys = appendArrays(normalizeArray(target.options.keys), [nextKey]);
         if (!normalizeArray(target.options.items).length) {
           target.options.items = target.options.keys.map((key) => createOptionItem(key));
         } else {
-          target.options.items = [...target.options.items, createOptionItem(nextKey)];
+          target.options.items = appendArrays(target.options.items, [createOptionItem(nextKey)]);
         }
         return;
       }
 
       const nextKey = getNextOptionKey(target.options.items);
-      target.options.items = [...normalizeArray(target.options.items), createOptionItem(nextKey)];
+      target.options.items = appendArrays(normalizeArray(target.options.items), [createOptionItem(nextKey)]);
       target.options.keys = target.options.items.map((item) => item.key);
     });
   },
@@ -1001,7 +1546,7 @@ Page({
           item === oldKey ? value : item
         );
         target.options.items = normalizeArray(target.options.items).map((item) =>
-          item.key === oldKey ? { ...item, key: value } : item
+          item.key === oldKey ? assignObject({}, item, { key: value }) : item
         );
         return;
       }
@@ -1409,10 +1954,9 @@ Page({
       if (!childResult.valid) {
         return childResult;
       }
-      normalizedChildren.push({
-        ...childResult.data,
+      normalizedChildren.push(assignObject({}, childResult.data, {
         questionId: normalizeString(children[i] && children[i].questionId),
-      });
+      }));
     }
 
     return {
@@ -1464,23 +2008,40 @@ Page({
     });
 
     try {
-      await this.callQuestionFunction(
-        isGrouped
-          ? this.data.editorMode === "edit"
-            ? "updateQuestionGroup"
-            : "createQuestionGroup"
-          : this.data.editorMode === "edit"
-            ? "updateQuestion"
-            : "createQuestion",
-        payload
-      );
+      const actionType = isGrouped
+        ? this.data.editorMode === "edit"
+          ? "updateQuestionGroup"
+          : "createQuestionGroup"
+        : this.data.editorMode === "edit"
+          ? "updateQuestion"
+          : "createQuestion";
+      const result = await this.callQuestionFunction(actionType, payload);
+
+      if (isGrouped) {
+        const targetGroupId =
+          normalizeString(payload.groupId) ||
+          normalizeString(result && result.data && result.data.groupId) ||
+          normalizeString(this.data.editorForm.grouped.groupId);
+        if (targetGroupId) {
+          this.clearCachedDetail("group", targetGroupId);
+        }
+      } else {
+        const targetQuestionId =
+          normalizeString(payload.questionId) ||
+          normalizeString(result && result.data && result.data.questionId) ||
+          normalizeString(this.data.editorForm.single.questionId);
+        if (targetQuestionId) {
+          this.clearCachedDetail("single", targetQuestionId);
+        }
+      }
+
       wx.hideLoading();
       wx.showToast({
         title: "保存成功",
         icon: "success",
       });
       this.closeEditor();
-      await this.refreshQuestions(false);
+      await this.refreshQuestionSummaries(false);
     } catch (error) {
       const errMsg = getErrorMessage(error);
       if (isTimeoutError(errMsg)) {

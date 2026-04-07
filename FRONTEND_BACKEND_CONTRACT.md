@@ -44,9 +44,17 @@
 ### 1.3 权限规则
 
 - 普通用户可以读取题目
-- 管理员可以新增、编辑、删除题目和题组
+- 管理员可以访问题目总列表、新增、编辑、删除题目和题组
 - 管理员身份由后端根据 `OPENID` 和环境变量 `ADMIN_OPENIDS` 判断
 - 普通用户读取题目时不会返回 `correctOptionKeys`
+
+### 1.4 前端缓存规则
+
+- 前端会对题目详情与题组详情进行本地缓存
+- 详情缓存统一依赖详情返回中的 `version`
+- 列表预览接口也会返回对应实体的 `version`
+- 当前端发现本地缓存中的 `version` 与列表中的 `version` 一致时，可直接使用缓存
+- 当前端发现 `version` 不一致时，需要重新请求详情并覆盖本地缓存
 
 ## 2. 用户与工具接口
 
@@ -176,6 +184,7 @@
   },
   "correctOptionKeys": ["A"],
   "groupOrder": 1,
+  "version": "1712563200000",
   "createTime": 0,
   "updateTime": 0,
   "createdBy": "",
@@ -242,6 +251,42 @@
 - `single` 模式下 `sharedStem` 可以为空对象 `{}`
 - `grouped` 模式下 `sharedStem` 必填，且整组子题冗余保存同一份内容
 
+### 4.5.1 预览摘要字段
+
+管理员总列表与题组展开预览使用摘要字段，不直接返回完整题干与完整选项内容。
+
+单题预览结构：
+
+```json
+{
+  "stemText": "题干摘要",
+  "hasStemImage": false,
+  "optionMode": "per_option",
+  "optionKeys": ["A", "B", "C", "D"]
+}
+```
+
+题组子题预览结构：
+
+```json
+{
+  "questionId": "q_xxx",
+  "groupId": "g_xxx",
+  "groupOrder": 1,
+  "questionType": "choice",
+  "entryMode": "grouped",
+  "preview": {
+    "stemText": "子题题干摘要",
+    "hasStemImage": false,
+    "optionMode": "per_option",
+    "optionKeys": ["A", "B"]
+  },
+  "version": "1712563200000",
+  "createTime": 0,
+  "updateTime": 0
+}
+```
+
 ### 4.6 `optionMode`
 
 当前仅支持：
@@ -301,59 +346,114 @@
 - 不允许重复
 - 后端会统一转成大写
 
-## 5. 单题接口
+### 4.9 `version`
 
-由 `questionService` 处理。
+规则：
 
-### 5.1 `listQuestions`
+- 所有详情接口都必须返回 `version`
+- 所有列表预览接口也必须返回对应实体的 `version`
+- `version` 用于前端缓存校验，建议由后端基于当前记录最新更新时间生成
+- 对单题，`version` 应在题目内容发生变化时变化
+- 对题组，组内任一子题或公共题干发生变化时，该题组及组内子题相关 `version` 都应同步变化
+
+## 5. 管理员总列表接口
+
+由 `questionService` 处理，仅管理员可调用。
+
+### 5.1 `listQuestionSummaries`
 
 请求：
 
 ```json
 {
-  "type": "listQuestions"
+  "type": "listQuestionSummaries",
+  "limit": 20,
+  "cursor": "",
+  "keyword": ""
 }
 ```
+
+请求规则：
+
+- `limit` 可选，默认由后端决定，建议默认 `20`
+- `cursor` 可选，用于分页续拉
+- `keyword` 可选，用于后续支持按题干摘要等条件搜索
+- 普通用户调用时应直接返回失败
 
 返回 `data`：
 
 ```json
-[
-  {
-    "questionId": "q_xxx",
-    "groupId": "",
-    "questionType": "choice",
-    "entryMode": "single",
-    "sharedStem": {},
-    "stem": {
-      "sourceType": "text",
-      "text": "题干文本",
-      "imageFileIds": []
+{
+  "list": [
+    {
+      "entityType": "single",
+      "questionId": "q_xxx",
+      "groupId": "",
+      "questionType": "choice",
+      "entryMode": "single",
+      "preview": {
+        "stemText": "题干摘要",
+        "hasStemImage": false,
+        "optionMode": "per_option",
+        "optionKeys": ["A", "B", "C", "D"]
+      },
+      "version": "1712563200000",
+      "createTime": 0,
+      "updateTime": 0
     },
-    "optionMode": "per_option",
-    "options": {
-      "keys": ["A", "B"],
-      "items": [],
-      "groupedAsset": {
-        "sourceType": "image",
-        "imageFileId": ""
-      }
-    },
-    "groupOrder": 1,
-    "createTime": 0,
-    "updateTime": 0
-  }
-]
+    {
+      "entityType": "group",
+      "groupId": "g_xxx",
+      "questionType": "choice",
+      "entryMode": "grouped",
+      "sharedStemPreview": {
+        "stemText": "公共题干摘要",
+        "hasStemImage": true
+      },
+      "childCount": 3,
+      "childrenPreview": [
+        {
+          "questionId": "q_1",
+          "groupId": "g_xxx",
+          "groupOrder": 1,
+          "questionType": "choice",
+          "entryMode": "grouped",
+          "preview": {
+            "stemText": "子题1摘要",
+            "hasStemImage": false,
+            "optionMode": "per_option",
+            "optionKeys": ["A", "B"]
+          },
+          "version": "1712563200000",
+          "createTime": 0,
+          "updateTime": 0
+        }
+      ],
+      "version": "1712563200000",
+      "createTime": 0,
+      "updateTime": 0
+    }
+  ],
+  "nextCursor": "opaque_cursor",
+  "hasMore": true
+}
 ```
 
-说明：
+返回规则：
 
-- 返回平铺列表
-- 题组中的每个子题也会单独出现在列表中
-- 普通用户不返回 `correctOptionKeys`
-- 管理员会返回 `correctOptionKeys / createdBy / updatedBy`
+- 管理员总列表按实体维度返回
+- `entityType = single` 表示单题
+- `entityType = group` 表示题组
+- 题组在总列表中占一行，但前端点击展开后，使用 `childrenPreview` 平铺展示该组下的子题预览
+- `childrenPreview` 只用于预览，不代表已经返回了子题完整详情
+- 列表不得返回完整 `stem`、`sharedStem`、`options.items`、`correctOptionKeys`
+- `nextCursor` 为空字符串时表示没有下一页
 
-### 5.2 `getQuestionDetail`
+## 6. 单题接口
+
+由 `questionService` 处理。
+
+### 6.1 `getQuestionDetail`
 
 请求：
 
@@ -367,8 +467,9 @@
 返回 `data`：
 
 - 一条完整题目对象
+- 必须包含 `version`
 
-### 5.3 `createQuestion`
+### 6.2 `createQuestion`
 
 请求：
 
@@ -417,7 +518,7 @@
 }
 ```
 
-### 5.4 `updateQuestion`
+### 6.3 `updateQuestion`
 
 请求：
 
@@ -459,7 +560,7 @@
 - 只允许更新 `entryMode = single` 的题目
 - 如果传入的是关联题子题，后端会拒绝并提示使用题组更新接口
 
-### 5.5 `deleteQuestion`
+### 6.4 `deleteQuestion`
 
 请求：
 
@@ -478,11 +579,11 @@
 }
 ```
 
-## 6. 题组接口
+## 7. 题组接口
 
 由 `questionService` 处理。
 
-### 6.1 `getQuestionGroupDetail`
+### 7.1 `getQuestionGroupDetail`
 
 请求：
 
@@ -499,6 +600,7 @@
 {
   "groupId": "g_xxx",
   "entryMode": "grouped",
+  "version": "1712563200000",
   "sharedStem": {
     "sourceType": "image",
     "text": "",
@@ -538,8 +640,10 @@
 说明：
 
 - `children` 按 `groupOrder` 升序返回
+- 必须包含题组级别 `version`
+- `children[*]` 也必须包含各自 `version`
 
-### 6.2 `createQuestionGroup`
+### 7.2 `createQuestionGroup`
 
 请求：
 
@@ -602,7 +706,7 @@
 - 后端按 `children` 顺序写入 `groupOrder`
 - 每个子题会冗余保存同一份 `sharedStem`
 
-### 6.3 `updateQuestionGroup`
+### 7.3 `updateQuestionGroup`
 
 请求：
 
@@ -654,7 +758,34 @@
 - 若某个子题带了旧的 `questionId`，后端会尽量保留该 `questionId`
 - 新增子题若没有 `questionId`，后端会自动生成
 
-## 7. 前端调用分流规则
+### 7.4 `deleteQuestionGroup`
+
+请求：
+
+```json
+{
+  "type": "deleteQuestionGroup",
+  "groupId": "g_xxx"
+}
+```
+
+返回 `data`：
+
+```json
+{
+  "groupId": "g_xxx"
+}
+```
+
+说明：
+
+- 仅管理员可调用
+- 删除语义为整组删除
+- 后端应删除该 `groupId` 下所有子题记录
+- 若 `groupId` 不存在，应返回失败
+- 删除成功后，该题组对应的详情缓存应视为失效
+
+## 8. 前端调用分流规则
 
 当前前端调用规则如下：
 
@@ -674,16 +805,17 @@
 
 ### 发给 `questionService`
 
-- `listQuestions`
+- `listQuestionSummaries`
 - `getQuestionDetail`
 - `getQuestionGroupDetail`
 - `createQuestion`
 - `updateQuestion`
 - `createQuestionGroup`
 - `updateQuestionGroup`
+- `deleteQuestionGroup`
 - `deleteQuestion`
 
-## 8. 后续改动原则
+## 9. 后续改动原则
 
 如果后续重构前端或继续演进后端，建议遵守：
 
@@ -691,3 +823,5 @@
 - 不要随意修改统一返回结构 `{ success, data, errMsg }`
 - 若要新增字段，尽量追加，不要破坏现有字段
 - 若要变更题目对象结构，先更新本文件，再更新前后端实现
+- 管理员总列表与详情接口应长期保持“预览”和“完整内容”分层
+- 若调整缓存规则，优先保持 `version` 机制兼容

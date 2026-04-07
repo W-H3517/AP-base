@@ -19,6 +19,10 @@ function normalizeString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 function normalizeSourceType(value, fallback = "text") {
   return value === "image" ? "image" : value === "text" ? "text" : fallback;
 }
@@ -27,19 +31,24 @@ function normalizeOptionMode(value) {
   return value === "grouped_asset" ? "grouped_asset" : "per_option";
 }
 
-function createEmptyStem() {
+function normalizeEntryMode(value) {
+  return value === "grouped" ? "grouped" : "single";
+}
+
+function createRichContent(defaultSourceType = "text") {
   return {
-    sourceType: "text",
+    sourceType: defaultSourceType,
     text: "",
-    imageFileId: "",
+    imageFileIds: [],
   };
 }
 
-function createEmptyGroupedAsset() {
-  return {
-    sourceType: "image",
-    imageFileId: "",
-  };
+function createEmptyStem() {
+  return createRichContent("text");
+}
+
+function createEmptySharedStem() {
+  return createRichContent("text");
 }
 
 function createOptionItem(key) {
@@ -56,11 +65,14 @@ function createDefaultOptions() {
   return {
     keys,
     items: keys.map((key) => createOptionItem(key)),
-    groupedAsset: createEmptyGroupedAsset(),
+    groupedAsset: {
+      sourceType: "image",
+      imageFileId: "",
+    },
   };
 }
 
-function createEmptyEditorForm() {
+function createSingleQuestionForm() {
   return {
     questionId: "",
     questionType: QUESTION_TYPE,
@@ -71,14 +83,26 @@ function createEmptyEditorForm() {
   };
 }
 
-function getNextOptionKey(keys) {
+function createGroupedQuestionForm() {
+  return {
+    groupId: "",
+    sharedStem: createEmptySharedStem(),
+    children: [createSingleQuestionForm(), createSingleQuestionForm()],
+  };
+}
+
+function createEmptyEditorForm() {
+  return {
+    single: createSingleQuestionForm(),
+    grouped: createGroupedQuestionForm(),
+  };
+}
+
+function getNextOptionKey(itemsOrKeys) {
   const usedKeys = new Set(
-    (Array.isArray(keys) ? keys : [])
-      .map((item) =>
-        normalizeString(
-          isPlainObject(item) ? item.key : item
-        ).toUpperCase()
-      )
+    (Array.isArray(itemsOrKeys) ? itemsOrKeys : [])
+      .map((item) => (isPlainObject(item) ? item.key : item))
+      .map((item) => normalizeString(item).toUpperCase())
       .filter(Boolean)
   );
 
@@ -117,24 +141,44 @@ function normalizeUser(result) {
   };
 }
 
-function normalizeStem(rawStem, legacyStemImageFileId = "") {
-  const stem = isPlainObject(rawStem) ? rawStem : {};
-  const sourceType = normalizeSourceType(
-    stem.sourceType || (legacyStemImageFileId ? "image" : "text")
-  );
-  const normalized = {
-    sourceType,
-    text: normalizeString(stem.text),
-    imageFileId: normalizeString(stem.imageFileId || legacyStemImageFileId),
-  };
-
-  if (sourceType === "text") {
-    normalized.imageFileId = "";
-  } else {
-    normalized.text = "";
+function normalizeImageFileIds(value, fallback = "") {
+  if (Array.isArray(value)) {
+    const cleaned = value.map((item) => normalizeString(item)).filter(Boolean);
+    if (cleaned.length) {
+      return cleaned;
+    }
   }
+  const single = normalizeString(value);
+  if (single) {
+    return [single];
+  }
+  const legacy = normalizeString(fallback);
+  return legacy ? [legacy] : [];
+}
 
-  return normalized;
+function normalizeRichContent(rawContent, legacyImageValue = "") {
+  const content = isPlainObject(rawContent) ? rawContent : {};
+  const imageFileIds = normalizeImageFileIds(
+    content.imageFileIds || content.imageFileId,
+    legacyImageValue
+  );
+  const sourceType = normalizeSourceType(
+    content.sourceType,
+    imageFileIds.length ? "image" : "text"
+  );
+  const text = normalizeString(content.text);
+  if (sourceType === "text") {
+    return {
+      sourceType: "text",
+      text,
+      imageFileIds: [],
+    };
+  }
+  return {
+    sourceType: "image",
+    text: "",
+    imageFileIds,
+  };
 }
 
 function normalizeOptionItem(item) {
@@ -144,128 +188,94 @@ function normalizeOptionItem(item) {
     option.sourceType,
     option.imageFileId ? "image" : "text"
   );
-  const normalized = {
+  const text = normalizeString(option.text);
+  const imageFileId = normalizeString(option.imageFileId);
+  return {
     key,
     sourceType,
-    text: normalizeString(option.text),
-    imageFileId: normalizeString(option.imageFileId),
+    text: sourceType === "text" ? text : "",
+    imageFileId: sourceType === "image" ? imageFileId : "",
   };
-
-  if (sourceType === "text") {
-    normalized.imageFileId = "";
-  } else {
-    normalized.text = "";
-  }
-
-  return normalized;
 }
 
 function normalizeGroupedAsset(groupedAsset) {
   const asset = isPlainObject(groupedAsset) ? groupedAsset : {};
   return {
     sourceType: "image",
-    imageFileId: normalizeString(asset.imageFileId),
+    imageFileId: normalizeString(asset.imageFileId || asset.imageFileIds?.[0]),
   };
 }
 
-function getQuestionKeysFromItems(items) {
-  return (Array.isArray(items) ? items : [])
-    .map((item) => normalizeString(item && item.key).toUpperCase())
+function normalizeOptions(options) {
+  const source = isPlainObject(options) ? options : {};
+  if (Array.isArray(source)) {
+    const items = source.map((item) => normalizeOptionItem(item)).filter((item) => item.key);
+    return {
+      keys: items.map((item) => item.key),
+      items,
+      groupedAsset: {
+        sourceType: "image",
+        imageFileId: "",
+      },
+    };
+  }
+  return {
+    keys: normalizeArray(source.keys)
+      .map((item) => normalizeString(item).toUpperCase())
+      .filter(Boolean),
+    items: normalizeArray(source.items).map((item) => normalizeOptionItem(item)),
+    groupedAsset: normalizeGroupedAsset(source.groupedAsset),
+  };
+}
+
+function normalizeCheckboxKeys(keys) {
+  return normalizeArray(keys)
+    .map((item) => normalizeString(item).toUpperCase())
     .filter(Boolean);
+}
+
+function getAnswerText(question) {
+  const keys = normalizeCheckboxKeys(question && question.correctOptionKeys);
+  return keys.length ? keys.join(", ") : "暂无";
 }
 
 function getQuestionImageUrls(question) {
   const urls = [];
   const source = isPlainObject(question) ? question : {};
+  normalizeRichContent(source.sharedStem).imageFileIds.forEach((url) => urls.push(url));
+  normalizeRichContent(source.stem, source.stemImageFileId).imageFileIds.forEach((url) => urls.push(url));
 
-  const stem = normalizeStem(source.stem, source.stemImageFileId);
-  if (stem.imageFileId) {
-    urls.push(stem.imageFileId);
-  }
-
-  const options = isPlainObject(source.options) ? source.options : {};
-  if (source.optionMode === "grouped_asset" && options.groupedAsset) {
-    const groupedAsset = normalizeGroupedAsset(options.groupedAsset);
-    if (groupedAsset.imageFileId) {
-      urls.push(groupedAsset.imageFileId);
-    }
-  }
-
-  const items = Array.isArray(options.items)
-    ? options.items
-    : Array.isArray(source.options)
-      ? source.options
-      : [];
-
-  items.forEach((item) => {
-    const normalized = normalizeOptionItem(item);
-    if (normalized.imageFileId) {
-      urls.push(normalized.imageFileId);
+  const options = normalizeOptions(source.options);
+  options.items.forEach((option) => {
+    if (option.imageFileId) {
+      urls.push(option.imageFileId);
     }
   });
-
-  return urls;
-}
-
-function getQuestionAnswerText(question) {
-  const keys = Array.isArray(question && question.correctOptionKeys)
-    ? question.correctOptionKeys
-        .map((item) => normalizeString(item).toUpperCase())
-        .filter(Boolean)
-    : [];
-
-  return keys.length ? keys.join(", ") : "暂无";
-}
-
-function normalizeQuestion(question, isAdmin) {
-  const source = isPlainObject(question) ? question : {};
-  const legacyOptions = Array.isArray(source.options) ? source.options : [];
-  const rawOptions = isPlainObject(source.options) ? source.options : {};
-  const stem = normalizeStem(source.stem, source.stemImageFileId);
-  let optionMode = normalizeOptionMode(source.optionMode);
-  let keys = [];
-  let items = [];
-  let groupedAsset = createEmptyGroupedAsset();
-
-  if (legacyOptions.length) {
-    optionMode = "per_option";
-    items = legacyOptions.map((item) => normalizeOptionItem(item));
-    keys = getQuestionKeysFromItems(items);
-  } else {
-    keys = Array.isArray(rawOptions.keys)
-      ? rawOptions.keys.map((item) => normalizeString(item).toUpperCase()).filter(Boolean)
-      : [];
-    items = Array.isArray(rawOptions.items)
-      ? rawOptions.items.map((item) => normalizeOptionItem(item))
-      : [];
-    groupedAsset = normalizeGroupedAsset(rawOptions.groupedAsset);
-
-    if (!keys.length && items.length) {
-      keys = getQuestionKeysFromItems(items);
-    }
-
-    if (!keys.length && Array.isArray(source.correctOptionKeys)) {
-      keys = source.correctOptionKeys
-        .map((item) => normalizeString(item).toUpperCase())
-        .filter(Boolean);
-    }
-
-    if (!items.length && keys.length) {
-      items = keys.map((key) => createOptionItem(key));
-    }
+  if (options.groupedAsset && options.groupedAsset.imageFileId) {
+    urls.push(options.groupedAsset.imageFileId);
   }
 
+  normalizeArray(source.children).forEach((child) => {
+    getQuestionImageUrls(child).forEach((url) => urls.push(url));
+  });
+
+  return [...new Set(urls.filter(Boolean))];
+}
+
+function normalizeQuestionItem(question, isAdmin) {
+  const source = isPlainObject(question) ? question : {};
+  const entryMode = normalizeEntryMode(source.entryMode || (source.groupId ? "grouped" : "single"));
   const normalized = {
     _id: source._id || "",
     questionId: normalizeString(source.questionId),
-    questionType: source.questionType || QUESTION_TYPE,
-    stem,
-    optionMode,
-    options: {
-      keys,
-      items,
-      groupedAsset,
-    },
+    groupId: normalizeString(source.groupId),
+    groupOrder: Number(source.groupOrder || 1),
+    entryMode,
+    questionType: normalizeString(source.questionType) || QUESTION_TYPE,
+    sharedStem: normalizeRichContent(source.sharedStem),
+    stem: normalizeRichContent(source.stem, source.stemImageFileId),
+    optionMode: normalizeOptionMode(source.optionMode),
+    options: normalizeOptions(source.options),
     createTime: source.createTime,
     updateTime: source.updateTime,
     createdBy: source.createdBy || "",
@@ -273,70 +283,86 @@ function normalizeQuestion(question, isAdmin) {
   };
 
   if (isAdmin) {
-    normalized.correctOptionKeys = Array.isArray(source.correctOptionKeys)
-      ? source.correctOptionKeys
-          .map((item) => normalizeString(item).toUpperCase())
-          .filter(Boolean)
-      : [];
-    normalized.correctOptionText = getQuestionAnswerText(normalized);
+    normalized.correctOptionKeys = normalizeCheckboxKeys(source.correctOptionKeys);
+    normalized.correctOptionText = getAnswerText(normalized);
   }
 
   return normalized;
 }
 
-function normalizeEditorForm(question) {
-  const normalized = normalizeQuestion(question, true);
-  if (!normalized.questionId && !normalized.stem && !normalized.options) {
-    return createEmptyEditorForm();
-  }
-
-  const keys = Array.isArray(normalized.options.keys) && normalized.options.keys.length
-    ? normalized.options.keys.slice()
-    : ["A", "B"];
-  const items = Array.isArray(normalized.options.items) && normalized.options.items.length
-    ? normalized.options.items.map((item) => ({
-        key: normalizeString(item.key).toUpperCase(),
-        sourceType: normalizeSourceType(
-          item.sourceType,
-          item.imageFileId ? "image" : "text"
-        ),
-        text: normalizeString(item.text),
-        imageFileId: normalizeString(item.imageFileId),
-      }))
-    : keys.map((key) => createOptionItem(key));
+function normalizeQuestionGroupDetail(group, isAdmin) {
+  const source = isPlainObject(group) ? group : {};
+  const sharedStem = normalizeRichContent(source.sharedStem);
+  const childrenSource = normalizeArray(source.children).length
+    ? normalizeArray(source.children)
+    : normalizeArray(source.questions);
+  const children = childrenSource.map((child, index) =>
+    normalizeQuestionItem(
+      {
+        ...child,
+        entryMode: "grouped",
+        groupId: normalizeString(source.groupId || child.groupId),
+        groupOrder: Number(child.groupOrder || index + 1),
+        sharedStem: child.sharedStem || sharedStem,
+      },
+      isAdmin
+    )
+  );
 
   return {
-    questionId: normalized.questionId || "",
-    questionType: QUESTION_TYPE,
-    stem: normalized.stem && normalized.stem.sourceType ? clone(normalized.stem) : createEmptyStem(),
-    optionMode: normalized.optionMode || "per_option",
-    options: {
-      keys,
-      items,
-      groupedAsset: normalized.options.groupedAsset
-        ? clone(normalized.options.groupedAsset)
-        : createEmptyGroupedAsset(),
-    },
-    correctOptionKeys: Array.isArray(normalized.correctOptionKeys)
-      ? normalized.correctOptionKeys.slice()
-      : [],
+    groupId: normalizeString(source.groupId),
+    entryMode: "grouped",
+    sharedStem,
+    children,
+    createTime: source.createTime,
+    updateTime: source.updateTime,
+    createdBy: source.createdBy || "",
+    updatedBy: source.updatedBy || "",
   };
 }
 
-function getCurrentOptionKeys(form) {
-  if (!form || !form.options) {
-    return [];
-  }
+function normalizeEditorSingleForm(question) {
+  const normalized = normalizeQuestionItem(question, true);
+  return {
+    questionId: normalized.questionId || "",
+    questionType: QUESTION_TYPE,
+    entryMode: "single",
+    groupId: "",
+    groupOrder: 1,
+    sharedStem: createEmptySharedStem(),
+    stem: normalized.stem || createEmptyStem(),
+    optionMode: normalized.optionMode || "per_option",
+    options: normalized.options && normalized.options.keys ? normalized.options : createDefaultOptions(),
+    correctOptionKeys: normalizeArray(normalized.correctOptionKeys).slice(),
+  };
+}
 
-  if (form.optionMode === "grouped_asset") {
-    return Array.isArray(form.options.keys)
-      ? form.options.keys.map((item) => normalizeString(item).toUpperCase()).filter(Boolean)
-      : [];
-  }
+function normalizeEditorGroupedForm(group) {
+  const normalized = normalizeQuestionGroupDetail(group, true);
+  return {
+    groupId: normalized.groupId || "",
+    sharedStem: normalized.sharedStem || createEmptySharedStem(),
+    children: normalizeArray(normalized.children).length
+      ? normalized.children.map((child) => normalizeEditorSingleForm(child))
+      : [createSingleQuestionForm(), createSingleQuestionForm()],
+  };
+}
 
-  return Array.isArray(form.options.items)
-    ? form.options.items.map((item) => normalizeString(item && item.key).toUpperCase()).filter(Boolean)
-    : [];
+function getTargetStem(form, scope, childIndex) {
+  if (scope === "group-shared") {
+    return form.grouped.sharedStem;
+  }
+  if (scope === "group-child") {
+    return form.grouped.children[childIndex] && form.grouped.children[childIndex].stem;
+  }
+  return form.single.stem;
+}
+
+function getTargetQuestion(form, scope, childIndex) {
+  if (scope === "group-child") {
+    return form.grouped.children[childIndex];
+  }
+  return form.single;
 }
 
 Page({
@@ -357,10 +383,12 @@ Page({
       role: "",
     },
     questions: [],
-    selectedQuestion: null,
+    selectedDetail: null,
+    selectedDetailType: "single",
     showDetailModal: false,
     showEditorModal: false,
     editorMode: "create",
+    editorEntryMode: "single",
     editorForm: createEmptyEditorForm(),
   },
 
@@ -390,7 +418,6 @@ Page({
     if (getCloudEnv()) {
       return true;
     }
-
     this.showCloudTip(
       "请先配置云开发环境",
       "请先在 miniprogram/app.js 中填写 env，再使用题库功能。"
@@ -417,15 +444,29 @@ Page({
     });
   },
 
+  getEditorScopeFromEvent(e) {
+    const scope = normalizeString(e.currentTarget.dataset.scope);
+    if (scope === "group-shared") {
+      return "group-shared";
+    }
+    if (scope === "group-child") {
+      return "group-child";
+    }
+    return "single";
+  },
+
+  getChildIndexFromEvent(e) {
+    const value = e.currentTarget.dataset.childIndex;
+    return value === undefined || value === null || value === "" ? null : Number(value);
+  },
+
   async refreshCurrentUser(showLoading = true) {
     if (!this.ensureCloudEnv()) {
       return;
     }
 
     if (showLoading) {
-      wx.showLoading({
-        title: "同步中...",
-      });
+      wx.showLoading({ title: "同步中..." });
     }
 
     this.setData({
@@ -468,9 +509,7 @@ Page({
     }
 
     if (showLoading) {
-      wx.showLoading({
-        title: "加载题目...",
-      });
+      wx.showLoading({ title: "加载题目..." });
     }
 
     this.setData({
@@ -479,9 +518,9 @@ Page({
 
     try {
       const result = await this.callQuestionFunction("listQuestions");
-      const list = Array.isArray(result.data) ? result.data : [];
+      const list = normalizeArray(result.data);
       this.setData({
-        questions: list.map((item) => normalizeQuestion(item, isAdmin)),
+        questions: list.map((item) => normalizeQuestionItem(item, isAdmin)),
       });
     } catch (error) {
       const errMsg = getErrorMessage(error);
@@ -505,7 +544,8 @@ Page({
 
   async viewQuestionDetail(e) {
     const questionId = e.currentTarget.dataset.questionid;
-    if (!questionId || !this.ensureCloudEnv()) {
+    const groupId = e.currentTarget.dataset.groupid;
+    if (!this.ensureCloudEnv()) {
       return;
     }
 
@@ -514,13 +554,25 @@ Page({
     });
 
     try {
-      const result = await this.callQuestionFunction("getQuestionDetail", {
-        questionId,
-      });
-      this.setData({
-        selectedQuestion: normalizeQuestion(result.data || {}, this.data.isAdmin),
-        showDetailModal: true,
-      });
+      if (groupId) {
+        const result = await this.callQuestionFunction("getQuestionGroupDetail", {
+          groupId,
+        });
+        this.setData({
+          selectedDetail: normalizeQuestionGroupDetail(result.data || {}, this.data.isAdmin),
+          selectedDetailType: "grouped",
+          showDetailModal: true,
+        });
+      } else {
+        const result = await this.callQuestionFunction("getQuestionDetail", {
+          questionId,
+        });
+        this.setData({
+          selectedDetail: normalizeQuestionItem(result.data || {}, this.data.isAdmin),
+          selectedDetailType: "single",
+          showDetailModal: true,
+        });
+      }
     } catch (error) {
       const errMsg = getErrorMessage(error);
       if (isTimeoutError(errMsg)) {
@@ -536,7 +588,8 @@ Page({
   closeDetailModal() {
     this.setData({
       showDetailModal: false,
-      selectedQuestion: null,
+      selectedDetail: null,
+      selectedDetailType: "single",
     });
   },
 
@@ -555,25 +608,30 @@ Page({
   previewQuestionImages(e) {
     const current = e.currentTarget.dataset.src;
     const questionId = e.currentTarget.dataset.questionid;
+    const groupId = e.currentTarget.dataset.groupid;
     if (!current) {
       return;
     }
 
-    let question = null;
+    let source = null;
     if (
-      this.data.selectedQuestion &&
-      this.data.selectedQuestion.questionId === questionId
+      this.data.showDetailModal &&
+      this.data.selectedDetail &&
+      ((groupId &&
+        this.data.selectedDetailType === "grouped" &&
+        this.data.selectedDetail.groupId === groupId) ||
+        (!groupId &&
+          this.data.selectedDetailType === "single" &&
+          this.data.selectedDetail.questionId === questionId))
     ) {
-      question = this.data.selectedQuestion;
+      source = this.data.selectedDetail;
     }
 
-    if (!question) {
-      question = (this.data.questions || []).find(
-        (item) => item.questionId === questionId
-      );
+    if (!source && questionId) {
+      source = this.data.questions.find((item) => item.questionId === questionId);
     }
 
-    const urls = getQuestionImageUrls(question);
+    const urls = getQuestionImageUrls(source);
     wx.previewImage({
       current,
       urls: urls.length ? urls : [current],
@@ -588,6 +646,7 @@ Page({
 
     this.setData({
       editorMode: "create",
+      editorEntryMode: "single",
       editorForm: createEmptyEditorForm(),
       showEditorModal: true,
     });
@@ -595,7 +654,8 @@ Page({
 
   async openEditQuestion(e) {
     const questionId = e.currentTarget.dataset.questionid;
-    if (!questionId || !this.ensureCloudEnv()) {
+    const groupId = e.currentTarget.dataset.groupid;
+    if (!this.ensureCloudEnv()) {
       return;
     }
 
@@ -604,14 +664,33 @@ Page({
     });
 
     try {
-      const result = await this.callQuestionFunction("getQuestionDetail", {
-        questionId,
-      });
-      this.setData({
-        editorMode: "edit",
-        editorForm: normalizeEditorForm(result.data || {}),
-        showEditorModal: true,
-      });
+      if (groupId) {
+        const result = await this.callQuestionFunction("getQuestionGroupDetail", {
+          groupId,
+        });
+        this.setData({
+          editorMode: "edit",
+          editorEntryMode: "grouped",
+          editorForm: {
+            single: createSingleQuestionForm(),
+            grouped: normalizeEditorGroupedForm(result.data || {}),
+          },
+          showEditorModal: true,
+        });
+      } else {
+        const result = await this.callQuestionFunction("getQuestionDetail", {
+          questionId,
+        });
+        this.setData({
+          editorMode: "edit",
+          editorEntryMode: "single",
+          editorForm: {
+            single: normalizeEditorSingleForm(result.data || {}),
+            grouped: createGroupedQuestionForm(),
+          },
+          showEditorModal: true,
+        });
+      }
     } catch (error) {
       const errMsg = getErrorMessage(error);
       if (isTimeoutError(errMsg)) {
@@ -628,6 +707,7 @@ Page({
     this.setData({
       showEditorModal: false,
       editorMode: "create",
+      editorEntryMode: "single",
       editorForm: createEmptyEditorForm(),
     });
   },
@@ -667,7 +747,6 @@ Page({
       await this.callQuestionFunction("deleteQuestion", {
         questionId,
       });
-      wx.hideLoading();
       wx.showToast({
         title: "删除成功",
         icon: "success",
@@ -684,32 +763,56 @@ Page({
         this.showCloudTip("删除题目失败", errMsg);
       }
     } finally {
+      wx.hideLoading();
       this.setData({
         deletingQuestionId: "",
       });
     }
   },
 
+  switchEditorEntryMode(e) {
+    this.setData({
+      editorEntryMode: normalizeEntryMode(e.currentTarget.dataset.mode),
+    });
+  },
+
   switchStemSourceType(e) {
+    const scope = this.getEditorScopeFromEvent(e);
+    const childIndex = this.getChildIndexFromEvent(e);
     const sourceType = normalizeSourceType(e.currentTarget.dataset.type);
+
     this.setEditorForm((form) => {
-      form.stem.sourceType = sourceType;
+      const target = getTargetStem(form, scope, childIndex);
+      if (!target) {
+        return;
+      }
+
+      target.sourceType = sourceType;
       if (sourceType === "text") {
-        form.stem.imageFileId = "";
+        target.imageFileIds = [];
       } else {
-        form.stem.text = "";
+        target.text = "";
       }
     });
   },
 
   onStemTextInput(e) {
+    const scope = this.getEditorScopeFromEvent(e);
+    const childIndex = this.getChildIndexFromEvent(e);
     const value = e.detail.value || "";
+
     this.setEditorForm((form) => {
-      form.stem.text = value;
+      const target = getTargetStem(form, scope, childIndex);
+      if (!target) {
+        return;
+      }
+      target.text = value;
     });
   },
 
-  async uploadStemImage() {
+  async uploadStemImages(e) {
+    const scope = this.getEditorScopeFromEvent(e);
+    const childIndex = this.getChildIndexFromEvent(e);
     if (!this.ensureCloudEnv()) {
       return;
     }
@@ -719,208 +822,242 @@ Page({
     });
 
     try {
-      const fileID = await this.uploadImageToCloud("question-stem");
+      const fileIDs = await this.uploadImagesToCloud("question-stem");
       this.setEditorForm((form) => {
-        form.stem.sourceType = "image";
-        form.stem.imageFileId = fileID;
-        form.stem.text = "";
+        const target = getTargetStem(form, scope, childIndex);
+        if (!target) {
+          return;
+        }
+        target.sourceType = "image";
+        target.text = "";
+        target.imageFileIds = Array.from(
+          new Set([...(target.imageFileIds || []), ...fileIDs])
+        );
       });
     } catch (error) {
-      this.showCloudTip("上传题干图片失败", getErrorMessage(error));
+      this.showCloudTip("上传图片失败", getErrorMessage(error));
     } finally {
       wx.hideLoading();
     }
   },
 
-  switchOptionMode(e) {
-    const optionMode = normalizeOptionMode(e.currentTarget.dataset.mode);
+  removeStemImage(e) {
+    const scope = this.getEditorScopeFromEvent(e);
+    const childIndex = this.getChildIndexFromEvent(e);
+    const imageIndex = Number(e.currentTarget.dataset.index);
+
     this.setEditorForm((form) => {
-      const currentKeys = getCurrentOptionKeys(form);
-      const existingItems = Array.isArray(form.options.items) ? form.options.items.slice() : [];
-      form.optionMode = optionMode;
-      if (!Array.isArray(form.options.keys) || !form.options.keys.length) {
-        form.options.keys = currentKeys.length ? currentKeys : ["A", "B"];
+      const target = getTargetStem(form, scope, childIndex);
+      if (!target || Number.isNaN(imageIndex)) {
+        return;
       }
-      if (optionMode === "per_option") {
-        const itemMap = new Map(
-          existingItems.map((item) => [normalizeString(item.key).toUpperCase(), item])
-        );
-        form.options.items = form.options.keys.map((key) => {
-          const normalizedKey = normalizeString(key).toUpperCase();
-          const existing = itemMap.get(normalizedKey);
-          return existing
-            ? {
-                key: normalizedKey,
-                sourceType: normalizeSourceType(
-                  existing.sourceType,
-                  existing.imageFileId ? "image" : "text"
-                ),
-                text: normalizeString(existing.text),
-                imageFileId: normalizeString(existing.imageFileId),
-              }
-            : createOptionItem(normalizedKey);
-        });
-      } else if (!Array.isArray(form.options.items) || !form.options.items.length) {
-        form.options.items = form.options.keys.map((key) => createOptionItem(key));
-      }
-      if (!form.options.groupedAsset) {
-        form.options.groupedAsset = createEmptyGroupedAsset();
+      target.imageFileIds = normalizeArray(target.imageFileIds).filter(
+        (_, index) => index !== imageIndex
+      );
+      if (!target.imageFileIds.length && target.sourceType === "image") {
+        target.sourceType = "text";
       }
     });
   },
 
-  addOption() {
+  switchOptionMode(e) {
+    const scope = this.getEditorScopeFromEvent(e);
+    const childIndex = this.getChildIndexFromEvent(e);
+    const optionMode = normalizeOptionMode(e.currentTarget.dataset.mode);
+
     this.setEditorForm((form) => {
-      if (form.optionMode === "grouped_asset") {
-        const nextKey = getNextOptionKey(form.options.keys);
-        form.options.keys = (Array.isArray(form.options.keys) ? form.options.keys : []).concat(
-          nextKey
-        );
-        if (!Array.isArray(form.options.items) || !form.options.items.length) {
-          form.options.items = form.options.keys.map((key) => createOptionItem(key));
+      const target = getTargetQuestion(form, scope, childIndex);
+      if (!target) {
+        return;
+      }
+
+      target.optionMode = optionMode;
+      if (!Array.isArray(target.options.keys) || !target.options.keys.length) {
+        target.options.keys = normalizeArray(target.options.items).length
+          ? target.options.items.map((item) => item.key).filter(Boolean)
+          : ["A", "B"];
+      }
+      if (!Array.isArray(target.options.items) || !target.options.items.length) {
+        target.options.items = target.options.keys.map((key) => createOptionItem(key));
+      }
+      if (!target.options.groupedAsset) {
+        target.options.groupedAsset = {
+          sourceType: "image",
+          imageFileId: "",
+        };
+      }
+    });
+  },
+
+  addOption(e) {
+    const scope = this.getEditorScopeFromEvent(e);
+    const childIndex = this.getChildIndexFromEvent(e);
+
+    this.setEditorForm((form) => {
+      const target = getTargetQuestion(form, scope, childIndex);
+      if (!target) {
+        return;
+      }
+
+      if (target.optionMode === "grouped_asset") {
+        const nextKey = getNextOptionKey(target.options.keys);
+        target.options.keys = [...normalizeArray(target.options.keys), nextKey];
+        if (!normalizeArray(target.options.items).length) {
+          target.options.items = target.options.keys.map((key) => createOptionItem(key));
         } else {
-          form.options.items = form.options.items.concat(createOptionItem(nextKey));
+          target.options.items = [...target.options.items, createOptionItem(nextKey)];
         }
         return;
       }
 
-      const nextKey = getNextOptionKey(form.options.items);
-      if (!Array.isArray(form.options.items)) {
-        form.options.items = [];
-      }
-      form.options.items.push(createOptionItem(nextKey));
-      form.options.keys = form.options.items.map((item) => item.key);
+      const nextKey = getNextOptionKey(target.options.items);
+      target.options.items = [...normalizeArray(target.options.items), createOptionItem(nextKey)];
+      target.options.keys = target.options.items.map((item) => item.key);
     });
   },
 
   removeOption(e) {
+    const scope = this.getEditorScopeFromEvent(e);
+    const childIndex = this.getChildIndexFromEvent(e);
     const index = Number(e.currentTarget.dataset.index);
-    if (Number.isNaN(index)) {
-      return;
-    }
 
     this.setEditorForm((form) => {
-      if (form.optionMode === "grouped_asset") {
-        const keys = Array.isArray(form.options.keys) ? form.options.keys.slice() : [];
+      const target = getTargetQuestion(form, scope, childIndex);
+      if (!target || Number.isNaN(index)) {
+        return;
+      }
+
+      if (target.optionMode === "grouped_asset") {
+        const keys = normalizeArray(target.options.keys);
         if (keys.length <= 2) {
           this.showCloudTip("选项数量不足", "题目至少保留两个选项。");
           return;
         }
-
         const removedKey = keys[index];
         if (!removedKey) {
           return;
         }
-
-        keys.splice(index, 1);
-        form.options.keys = keys;
-        if (Array.isArray(form.options.items) && form.options.items.length) {
-          form.options.items = form.options.items.filter((item) => item.key !== removedKey);
-        }
-        form.correctOptionKeys = form.correctOptionKeys.filter((item) => item !== removedKey);
+        target.options.keys = keys.filter((_, i) => i !== index);
+        target.options.items = normalizeArray(target.options.items).filter(
+          (item) => item.key !== removedKey
+        );
+        target.correctOptionKeys = normalizeArray(target.correctOptionKeys).filter(
+          (item) => item !== removedKey
+        );
         return;
       }
 
-      const items = Array.isArray(form.options.items) ? form.options.items.slice() : [];
+      const items = normalizeArray(target.options.items);
       if (items.length <= 2) {
         this.showCloudTip("选项数量不足", "题目至少保留两个选项。");
         return;
       }
-
       const removed = items[index];
       if (!removed) {
         return;
       }
-
-      items.splice(index, 1);
-      form.options.items = items;
-      form.options.keys = items.map((item) => item.key);
-      form.correctOptionKeys = form.correctOptionKeys.filter((item) => item !== removed.key);
+      target.options.items = items.filter((_, i) => i !== index);
+      target.options.keys = target.options.items.map((item) => item.key);
+      target.correctOptionKeys = normalizeArray(target.correctOptionKeys).filter(
+        (item) => item !== removed.key
+      );
     });
   },
 
-  onEditorOptionKeyInput(e) {
+  onOptionKeyInput(e) {
+    const scope = this.getEditorScopeFromEvent(e);
+    const childIndex = this.getChildIndexFromEvent(e);
     const index = Number(e.currentTarget.dataset.index);
     const value = normalizeString(e.detail.value || "").toUpperCase();
-    if (Number.isNaN(index)) {
-      return;
-    }
 
     this.setEditorForm((form) => {
-      if (form.optionMode === "grouped_asset") {
-        const keys = Array.isArray(form.options.keys) ? form.options.keys.slice() : [];
+      const target = getTargetQuestion(form, scope, childIndex);
+      if (!target || Number.isNaN(index)) {
+        return;
+      }
+
+      if (target.optionMode === "grouped_asset") {
+        const keys = normalizeArray(target.options.keys).slice();
         const oldKey = keys[index];
         if (!oldKey) {
           return;
         }
-
         keys[index] = value;
-        form.options.keys = keys;
-        form.correctOptionKeys = form.correctOptionKeys.map((item) =>
+        target.options.keys = keys;
+        target.correctOptionKeys = normalizeArray(target.correctOptionKeys).map((item) =>
           item === oldKey ? value : item
         );
-
-        if (Array.isArray(form.options.items) && form.options.items.length) {
-          form.options.items = form.options.items.map((item) =>
-            item.key === oldKey ? { ...item, key: value } : item
-          );
-        }
+        target.options.items = normalizeArray(target.options.items).map((item) =>
+          item.key === oldKey ? { ...item, key: value } : item
+        );
         return;
       }
 
-      if (!Array.isArray(form.options.items) || !form.options.items[index]) {
+      const items = normalizeArray(target.options.items);
+      if (!items[index]) {
         return;
       }
-
-      const oldKey = form.options.items[index].key;
-      form.options.items[index].key = value;
-      form.options.keys = form.options.items.map((item) => item.key);
-      form.correctOptionKeys = form.correctOptionKeys.map((item) =>
+      const oldKey = items[index].key;
+      items[index].key = value;
+      target.options.items = items;
+      target.options.keys = items.map((item) => item.key);
+      target.correctOptionKeys = normalizeArray(target.correctOptionKeys).map((item) =>
         item === oldKey ? value : item
       );
     });
   },
 
   switchOptionSourceType(e) {
+    const scope = this.getEditorScopeFromEvent(e);
+    const childIndex = this.getChildIndexFromEvent(e);
     const index = Number(e.currentTarget.dataset.index);
     const sourceType = normalizeSourceType(e.currentTarget.dataset.type);
-    if (Number.isNaN(index)) {
-      return;
-    }
 
     this.setEditorForm((form) => {
-      if (!Array.isArray(form.options.items) || !form.options.items[index]) {
+      const target = getTargetQuestion(form, scope, childIndex);
+      if (!target || Number.isNaN(index)) {
         return;
       }
 
-      form.options.items[index].sourceType = sourceType;
+      const item = normalizeArray(target.options.items)[index];
+      if (!item) {
+        return;
+      }
+
+      item.sourceType = sourceType;
       if (sourceType === "text") {
-        form.options.items[index].imageFileId = "";
+        item.imageFileId = "";
       } else {
-        form.options.items[index].text = "";
+        item.text = "";
       }
     });
   },
 
   onOptionTextInput(e) {
+    const scope = this.getEditorScopeFromEvent(e);
+    const childIndex = this.getChildIndexFromEvent(e);
     const index = Number(e.currentTarget.dataset.index);
     const value = e.detail.value || "";
-    if (Number.isNaN(index)) {
-      return;
-    }
 
     this.setEditorForm((form) => {
-      if (!Array.isArray(form.options.items) || !form.options.items[index]) {
+      const target = getTargetQuestion(form, scope, childIndex);
+      if (!target || Number.isNaN(index)) {
         return;
       }
 
-      form.options.items[index].text = value;
+      const item = normalizeArray(target.options.items)[index];
+      if (!item) {
+        return;
+      }
+      item.text = value;
     });
   },
 
   async uploadOptionImage(e) {
+    const scope = this.getEditorScopeFromEvent(e);
+    const childIndex = this.getChildIndexFromEvent(e);
     const index = Number(e.currentTarget.dataset.index);
-    if (Number.isNaN(index) || !this.ensureCloudEnv()) {
+    if (!this.ensureCloudEnv() || Number.isNaN(index)) {
       return;
     }
 
@@ -929,15 +1066,20 @@ Page({
     });
 
     try {
-      const fileID = await this.uploadImageToCloud("question-option");
+      const fileIDs = await this.uploadImagesToCloud("question-option");
+      const fileID = fileIDs[0];
       this.setEditorForm((form) => {
-        if (!Array.isArray(form.options.items) || !form.options.items[index]) {
+        const target = getTargetQuestion(form, scope, childIndex);
+        if (!target) {
           return;
         }
-
-        form.options.items[index].sourceType = "image";
-        form.options.items[index].imageFileId = fileID;
-        form.options.items[index].text = "";
+        const item = normalizeArray(target.options.items)[index];
+        if (!item) {
+          return;
+        }
+        item.sourceType = "image";
+        item.imageFileId = fileID || "";
+        item.text = "";
       });
     } catch (error) {
       this.showCloudTip("上传选项图片失败", getErrorMessage(error));
@@ -946,7 +1088,29 @@ Page({
     }
   },
 
-  uploadGroupedAssetImage() {
+  removeOptionImage(e) {
+    const scope = this.getEditorScopeFromEvent(e);
+    const childIndex = this.getChildIndexFromEvent(e);
+    const index = Number(e.currentTarget.dataset.index);
+    this.setEditorForm((form) => {
+      const target = getTargetQuestion(form, scope, childIndex);
+      if (!target || Number.isNaN(index)) {
+        return;
+      }
+      const item = normalizeArray(target.options.items)[index];
+      if (!item) {
+        return;
+      }
+      item.imageFileId = "";
+      if (item.sourceType === "image") {
+        item.sourceType = "text";
+      }
+    });
+  },
+
+  async uploadGroupedAssetImage(e) {
+    const scope = this.getEditorScopeFromEvent(e);
+    const childIndex = this.getChildIndexFromEvent(e);
     if (!this.ensureCloudEnv()) {
       return;
     }
@@ -955,78 +1119,118 @@ Page({
       title: "上传中...",
     });
 
-    this.uploadImageToCloud("question-grouped-asset")
-      .then((fileID) => {
-        this.setEditorForm((form) => {
-          form.options.groupedAsset = {
-            sourceType: "image",
-            imageFileId: fileID,
-          };
-        });
-      })
-      .catch((error) => {
-        this.showCloudTip("上传大图失败", getErrorMessage(error));
-      })
-      .finally(() => {
-        wx.hideLoading();
+    try {
+      const fileIDs = await this.uploadImagesToCloud("question-grouped-asset");
+      const fileID = fileIDs[0];
+      this.setEditorForm((form) => {
+        const target = getTargetQuestion(form, scope, childIndex);
+        if (!target) {
+          return;
+        }
+        target.options.groupedAsset = {
+          sourceType: "image",
+          imageFileId: fileID || "",
+        };
       });
+    } catch (error) {
+      this.showCloudTip("上传大图失败", getErrorMessage(error));
+    } finally {
+      wx.hideLoading();
+    }
   },
 
-  onGroupedAssetKeyInput(e) {
-    const index = Number(e.currentTarget.dataset.index);
-    const value = normalizeString(e.detail.value || "").toUpperCase();
-    if (Number.isNaN(index)) {
-      return;
-    }
-
+  removeGroupedAssetImage(e) {
+    const scope = this.getEditorScopeFromEvent(e);
+    const childIndex = this.getChildIndexFromEvent(e);
     this.setEditorForm((form) => {
-      const keys = Array.isArray(form.options.keys) ? form.options.keys.slice() : [];
-      const oldKey = keys[index];
-      if (!oldKey) {
+      const target = getTargetQuestion(form, scope, childIndex);
+      if (!target) {
         return;
       }
-
-      keys[index] = value;
-      form.options.keys = keys;
-      form.correctOptionKeys = form.correctOptionKeys.map((item) =>
-        item === oldKey ? value : item
-      );
-
-      if (Array.isArray(form.options.items) && form.options.items.length) {
-        form.options.items = form.options.items.map((item) =>
-          item.key === oldKey ? { ...item, key: value } : item
-        );
-      }
+      target.options.groupedAsset = {
+        sourceType: "image",
+        imageFileId: "",
+      };
     });
   },
 
   onCorrectOptionChange(e) {
-    const editorForm = clone(this.data.editorForm);
-    const keys = getCurrentOptionKeys(editorForm);
-    const keySet = new Set(keys);
-    editorForm.correctOptionKeys = (e.detail.value || [])
-      .map((item) => normalizeString(item).toUpperCase())
-      .filter((item) => item && keySet.has(item));
-    this.setData({
-      editorForm,
+    const scope = this.getEditorScopeFromEvent(e);
+    const childIndex = this.getChildIndexFromEvent(e);
+    const checked = normalizeCheckboxKeys(e.detail.value);
+
+    this.setEditorForm((form) => {
+      const target = getTargetQuestion(form, scope, childIndex);
+      if (!target) {
+        return;
+      }
+      const keys = normalizeArray(target.options.keys);
+      const keySet = new Set(keys);
+      target.correctOptionKeys = checked.filter((item) => keySet.has(item));
     });
   },
 
-  async uploadImageToCloud(prefix) {
+  addChildQuestion() {
+    this.setEditorForm((form) => {
+      form.grouped.children.push(createSingleQuestionForm());
+    });
+  },
+
+  removeChildQuestion(e) {
+    const index = Number(e.currentTarget.dataset.childIndex);
+    this.setEditorForm((form) => {
+      if (Number.isNaN(index) || form.grouped.children.length <= 2) {
+        this.showCloudTip("子题数量不足", "关联题至少保留两个子题。");
+        return;
+      }
+      form.grouped.children.splice(index, 1);
+    });
+  },
+
+  moveChildQuestionUp(e) {
+    const index = Number(e.currentTarget.dataset.childIndex);
+    this.setEditorForm((form) => {
+      if (Number.isNaN(index) || index <= 0) {
+        return;
+      }
+      const items = form.grouped.children;
+      const temp = items[index - 1];
+      items[index - 1] = items[index];
+      items[index] = temp;
+    });
+  },
+
+  moveChildQuestionDown(e) {
+    const index = Number(e.currentTarget.dataset.childIndex);
+    this.setEditorForm((form) => {
+      if (Number.isNaN(index) || index >= form.grouped.children.length - 1) {
+        return;
+      }
+      const items = form.grouped.children;
+      const temp = items[index + 1];
+      items[index + 1] = items[index];
+      items[index] = temp;
+    });
+  },
+
+  async uploadImagesToCloud(prefix) {
     return new Promise((resolve, reject) => {
       wx.chooseMedia({
-        count: 1,
+        count: 9,
         mediaType: ["image"],
         sourceType: ["album", "camera"],
         success: async (chooseResult) => {
           try {
-            const filePath = chooseResult.tempFiles[0].tempFilePath;
-            const cloudPath = `${prefix}-${Date.now()}.png`;
-            const uploadResult = await wx.cloud.uploadFile({
-              cloudPath,
-              filePath,
-            });
-            resolve(uploadResult.fileID);
+            const files = normalizeArray(chooseResult.tempFiles);
+            const uploads = await Promise.all(
+              files.map((file, index) =>
+                wx.cloud.uploadFile({
+                  cloudPath: `${prefix}-${Date.now()}-${index}.png`,
+                  filePath: file.tempFilePath,
+                })
+              )
+            );
+            resolve(uploads.map((item) => item.fileID));
           } catch (error) {
             reject(error);
           }
@@ -1036,98 +1240,71 @@ Page({
     });
   },
 
-  validateEditorForm() {
-    const editorForm = this.data.editorForm || createEmptyEditorForm();
-    const questionType = normalizeString(editorForm.questionType) || QUESTION_TYPE;
-    const stem = isPlainObject(editorForm.stem) ? editorForm.stem : createEmptyStem();
-    const optionMode = normalizeOptionMode(editorForm.optionMode);
-    const options = isPlainObject(editorForm.options)
-      ? editorForm.options
-      : createDefaultOptions();
-
-    if (questionType !== QUESTION_TYPE) {
-      return { valid: false, message: "题目类型必须是 choice。" };
-    }
-
-    if (!["text", "image"].includes(stem.sourceType)) {
-      return { valid: false, message: "题干来源类型只能是文本或图片。" };
-    }
-
-    const normalizedStem = {
-      sourceType: stem.sourceType,
-      text: normalizeString(stem.text),
-      imageFileId: normalizeString(stem.imageFileId),
-    };
-
-    if (normalizedStem.sourceType === "text") {
-      if (!normalizedStem.text) {
-        return { valid: false, message: "请填写题干文本。" };
+  validateRichContent(content, label, allowEmpty = false) {
+    const normalized = normalizeRichContent(content);
+    if (normalized.sourceType === "text") {
+      if (!normalized.text && !allowEmpty) {
+        return { valid: false, message: `${label}文本不能为空。` };
       }
-      normalizedStem.imageFileId = "";
-    } else if (!normalizedStem.imageFileId) {
-      return { valid: false, message: "请上传题干图片。" };
-    } else {
-      normalizedStem.text = "";
+      return { valid: true, data: normalized };
+    }
+    if (!normalized.imageFileIds.length && !allowEmpty) {
+      return { valid: false, message: `${label}至少上传一张图片。` };
+    }
+    return { valid: true, data: normalized };
+  },
+
+  validateSingleQuestionForm(questionForm, label = "题目") {
+    const source = isPlainObject(questionForm) ? questionForm : createSingleQuestionForm();
+    if (normalizeString(source.questionType) !== QUESTION_TYPE) {
+      return { valid: false, message: `${label}类型必须是 choice。` };
     }
 
-    const correctOptionKeys = Array.isArray(editorForm.correctOptionKeys)
-      ? editorForm.correctOptionKeys
-          .map((item) => normalizeString(item).toUpperCase())
-          .filter(Boolean)
-      : [];
+    const stemResult = this.validateRichContent(source.stem, `${label}题干`);
+    if (!stemResult.valid) {
+      return stemResult;
+    }
+
+    const optionMode = normalizeOptionMode(source.optionMode);
+    const options = isPlainObject(source.options) ? source.options : createDefaultOptions();
+    const correctOptionKeys = normalizeCheckboxKeys(source.correctOptionKeys);
 
     if (optionMode === "per_option") {
-      const items = Array.isArray(options.items) ? options.items : [];
+      const items = normalizeArray(options.items);
       if (items.length < 2) {
-        return { valid: false, message: "题目至少需要两个选项。" };
+        return { valid: false, message: `${label}至少需要两个选项。` };
       }
 
       const normalizedItems = [];
       const keys = [];
-      const seenKeys = new Set();
-
+      const seen = new Set();
       for (let i = 0; i < items.length; i += 1) {
-        const option = isPlainObject(items[i]) ? items[i] : {};
-        const key = normalizeString(option.key).toUpperCase();
-        if (!key) {
-          return { valid: false, message: "请补全所有选项标识。" };
+        const item = normalizeOptionItem(items[i]);
+        if (!item.key) {
+          return { valid: false, message: `${label}请补全所有选项标识。` };
         }
-        if (seenKeys.has(key)) {
-          return { valid: false, message: "选项标识不能重复。" };
+        if (seen.has(item.key)) {
+          return { valid: false, message: `${label}选项标识不能重复。` };
         }
-        seenKeys.add(key);
+        seen.add(item.key);
 
-        const sourceType = normalizeSourceType(
-          option.sourceType,
-          option.imageFileId ? "image" : "text"
-        );
-        const text = normalizeString(option.text);
-        const imageFileId = normalizeString(option.imageFileId);
-
-        if (sourceType === "text") {
-          if (!text) {
-            return { valid: false, message: `请填写选项 ${key} 的文本。` };
-          }
-        } else if (!imageFileId) {
-          return { valid: false, message: `请上传选项 ${key} 的图片。` };
+        if (item.sourceType === "text" && !item.text) {
+          return { valid: false, message: `${label}请填写选项 ${item.key} 的文本。` };
+        }
+        if (item.sourceType === "image" && !item.imageFileId) {
+          return { valid: false, message: `${label}请上传选项 ${item.key} 的图片。` };
         }
 
-        normalizedItems.push({
-          key,
-          sourceType,
-          text: sourceType === "text" ? text : "",
-          imageFileId: sourceType === "image" ? imageFileId : "",
-        });
-        keys.push(key);
+        normalizedItems.push(item);
+        keys.push(item.key);
       }
 
       if (!correctOptionKeys.length) {
-        return { valid: false, message: "请至少选择一个正确答案。" };
+        return { valid: false, message: `${label}请至少选择一个正确答案。` };
       }
-
       for (let i = 0; i < correctOptionKeys.length; i += 1) {
-        if (!seenKeys.has(correctOptionKeys[i])) {
-          return { valid: false, message: "正确答案必须来自当前选项。" };
+        if (!seen.has(correctOptionKeys[i])) {
+          return { valid: false, message: `${label}正确答案必须来自当前选项。` };
         }
       }
 
@@ -1135,50 +1312,49 @@ Page({
         valid: true,
         data: {
           questionType: QUESTION_TYPE,
-          stem: normalizedStem,
+          entryMode: "single",
+          groupId: "",
+          groupOrder: 1,
+          sharedStem: createEmptySharedStem(),
+          stem: stemResult.data,
           optionMode,
           options: {
             keys,
             items: normalizedItems,
-            groupedAsset: createEmptyGroupedAsset(),
+            groupedAsset: {
+              sourceType: "image",
+              imageFileId: "",
+            },
           },
           correctOptionKeys: Array.from(new Set(correctOptionKeys)),
         },
       };
     }
 
-    const keys = Array.isArray(options.keys)
-      ? options.keys.map((item) => normalizeString(item).toUpperCase()).filter(Boolean)
-      : [];
-
+    const keys = normalizeCheckboxKeys(options.keys);
     if (keys.length < 2) {
-      return { valid: false, message: "题目至少需要两个选项。" };
+      return { valid: false, message: `${label}至少需要两个选项。` };
     }
 
-    const seenKeys = new Set();
+    const seen = new Set();
     for (let i = 0; i < keys.length; i += 1) {
-      if (seenKeys.has(keys[i])) {
-        return { valid: false, message: "选项标识不能重复。" };
+      if (seen.has(keys[i])) {
+        return { valid: false, message: `${label}选项标识不能重复。` };
       }
-      seenKeys.add(keys[i]);
+      seen.add(keys[i]);
     }
 
-    const groupedAsset = isPlainObject(options.groupedAsset)
-      ? options.groupedAsset
-      : createEmptyGroupedAsset();
-    const groupedImageFileId = normalizeString(groupedAsset.imageFileId);
-
-    if (!groupedImageFileId) {
-      return { valid: false, message: "请上传覆盖选项的大图。" };
+    const groupedAsset = normalizeGroupedAsset(options.groupedAsset);
+    if (!groupedAsset.imageFileId) {
+      return { valid: false, message: `${label}请上传覆盖选项的大图。` };
     }
 
     if (!correctOptionKeys.length) {
-      return { valid: false, message: "请至少选择一个正确答案。" };
+      return { valid: false, message: `${label}请至少选择一个正确答案。` };
     }
-
     for (let i = 0; i < correctOptionKeys.length; i += 1) {
-      if (!seenKeys.has(correctOptionKeys[i])) {
-        return { valid: false, message: "正确答案必须来自当前选项。" };
+      if (!seen.has(correctOptionKeys[i])) {
+        return { valid: false, message: `${label}正确答案必须来自当前选项。` };
       }
     }
 
@@ -1186,17 +1362,53 @@ Page({
       valid: true,
       data: {
         questionType: QUESTION_TYPE,
-        stem: normalizedStem,
+        entryMode: "single",
+        groupId: "",
+        groupOrder: 1,
+        sharedStem: createEmptySharedStem(),
+        stem: stemResult.data,
         optionMode,
         options: {
           keys,
           items: [],
-          groupedAsset: {
-            sourceType: "image",
-            imageFileId: groupedImageFileId,
-          },
+          groupedAsset,
         },
         correctOptionKeys: Array.from(new Set(correctOptionKeys)),
+      },
+    };
+  },
+
+  validateGroupedQuestionForm(groupForm) {
+    const source = isPlainObject(groupForm) ? groupForm : createGroupedQuestionForm();
+    const sharedStemResult = this.validateRichContent(source.sharedStem, "公共题干");
+    if (!sharedStemResult.valid) {
+      return sharedStemResult;
+    }
+
+    const children = normalizeArray(source.children);
+    if (children.length < 2) {
+      return { valid: false, message: "关联题至少需要两个子题。" };
+    }
+
+    const normalizedChildren = [];
+    for (let i = 0; i < children.length; i += 1) {
+      const childResult = this.validateSingleQuestionForm(children[i], `第 ${i + 1} 个子题`);
+      if (!childResult.valid) {
+        return childResult;
+      }
+      normalizedChildren.push({
+        ...childResult.data,
+        questionId: normalizeString(children[i] && children[i].questionId),
+      });
+    }
+
+    return {
+      valid: true,
+      data: {
+        entryMode: "grouped",
+        groupId: normalizeString(source.groupId),
+        sharedStem: sharedStemResult.data,
+        children: normalizedChildren,
       },
     };
   },
@@ -1207,19 +1419,28 @@ Page({
       return;
     }
 
-    const validation = this.validateEditorForm();
+    if (!this.ensureCloudEnv()) {
+      return;
+    }
+
+    const isGrouped = this.data.editorEntryMode === "grouped";
+    const form = isGrouped ? this.data.editorForm.grouped : this.data.editorForm.single;
+    const validation = isGrouped
+      ? this.validateGroupedQuestionForm(form)
+      : this.validateSingleQuestionForm(form);
+
     if (!validation.valid) {
       this.showCloudTip("请先完善题目", validation.message);
       return;
     }
 
-    if (!this.ensureCloudEnv()) {
-      return;
-    }
-
-    const data = clone(validation.data);
-    if (this.data.editorMode === "edit") {
-      data.questionId = this.data.editorForm.questionId;
+    const payload = clone(validation.data);
+    if (isGrouped) {
+      if (this.data.editorMode === "edit") {
+        payload.groupId = normalizeString(this.data.editorForm.grouped.groupId);
+      }
+    } else if (this.data.editorMode === "edit") {
+      payload.questionId = normalizeString(this.data.editorForm.single.questionId);
     }
 
     wx.showLoading({
@@ -1231,8 +1452,14 @@ Page({
 
     try {
       await this.callQuestionFunction(
-        this.data.editorMode === "edit" ? "updateQuestion" : "createQuestion",
-        data
+        isGrouped
+          ? this.data.editorMode === "edit"
+            ? "updateQuestionGroup"
+            : "createQuestionGroup"
+          : this.data.editorMode === "edit"
+            ? "updateQuestion"
+            : "createQuestion",
+        payload
       );
       wx.hideLoading();
       wx.showToast({
@@ -1252,6 +1479,7 @@ Page({
         this.showCloudTip("保存题目失败", errMsg);
       }
     } finally {
+      wx.hideLoading();
       this.setData({
         savingQuestion: false,
       });

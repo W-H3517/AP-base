@@ -11,6 +11,8 @@ const QUESTIONS_COLLECTION = "questions";
 const QUESTION_TYPE_CHOICE = "choice";
 const CONTENT_SOURCE_TEXT = "text";
 const CONTENT_SOURCE_IMAGE = "image";
+const ENTRY_MODE_SINGLE = "single";
+const ENTRY_MODE_GROUPED = "grouped";
 const OPTION_MODE_PER_OPTION = "per_option";
 const OPTION_MODE_GROUPED_ASSET = "grouped_asset";
 const ADMIN_OPENIDS = (process.env.ADMIN_OPENIDS || "")
@@ -172,24 +174,22 @@ const generateQuestionId = async () => {
   throw new Error("题目ID生成失败，请重试");
 };
 
-const normalizeCorrectOptionKeys = (correctOptionKeys) => {
-  if (!Array.isArray(correctOptionKeys) || !correctOptionKeys.length) {
-    throw new Error("correctOptionKeys 必须是非空数组");
+const generateGroupId = async () => {
+  for (let i = 0; i < 8; i += 1) {
+    const candidate = `g_${crypto.randomBytes(12).toString("hex")}`;
+    const existed = await db
+      .collection(QUESTIONS_COLLECTION)
+      .where({
+        groupId: candidate,
+      })
+      .limit(1)
+      .get();
+    if (!existed.data?.length) {
+      return candidate;
+    }
   }
 
-  const cleaned = correctOptionKeys.map((key) => normalizeUpperString(key));
-  const keySet = new Set();
-  for (const key of cleaned) {
-    if (!key) {
-      throw new Error("correctOptionKeys 中存在空值");
-    }
-    if (keySet.has(key)) {
-      throw new Error(`correctOptionKeys 重复：${key}`);
-    }
-    keySet.add(key);
-  }
-
-  return cleaned;
+  throw new Error("题组ID生成失败，请重试");
 };
 
 const validateSourceType = (sourceType, fieldName) => {
@@ -202,7 +202,68 @@ const validateSourceType = (sourceType, fieldName) => {
   return sourceType;
 };
 
-const normalizeContentBlock = (content, fieldName) => {
+const normalizeImageFileIds = (imageFileIds, fieldName) => {
+  if (!Array.isArray(imageFileIds)) {
+    throw new Error(`${fieldName}.imageFileIds 必须是数组`);
+  }
+
+  const cleaned = imageFileIds
+    .map((item) => normalizeString(item))
+    .filter(Boolean);
+
+  if (!cleaned.length) {
+    throw new Error(`${fieldName}.imageFileIds 不能为空`);
+  }
+
+  return cleaned;
+};
+
+const normalizeRichStem = (content, fieldName, { allowEmpty = false } = {}) => {
+  if (allowEmpty) {
+    const text = normalizeString(content?.text);
+    const rawImageFileIds = Array.isArray(content?.imageFileIds)
+      ? content.imageFileIds
+      : [];
+    const imageFileIds = rawImageFileIds
+      .map((item) => normalizeString(item))
+      .filter(Boolean);
+
+    if (!text && !imageFileIds.length) {
+      return {};
+    }
+  }
+
+  const sourceType = validateSourceType(
+    normalizeString(content?.sourceType),
+    fieldName,
+  );
+  const text = normalizeString(content?.text);
+  const imageFileIds = Array.isArray(content?.imageFileIds)
+    ? content.imageFileIds
+    : [];
+
+  if (sourceType === CONTENT_SOURCE_TEXT) {
+    if (!text) {
+      throw new Error(`${fieldName}.text 不能为空`);
+    }
+    if (imageFileIds.some((item) => normalizeString(item))) {
+      throw new Error(`${fieldName} 为文本时不能同时传 imageFileIds`);
+    }
+    return {
+      sourceType,
+      text,
+      imageFileIds: [],
+    };
+  }
+
+  return {
+    sourceType,
+    text: "",
+    imageFileIds: normalizeImageFileIds(imageFileIds, fieldName),
+  };
+};
+
+const normalizeOptionContent = (content, fieldName) => {
   const sourceType = validateSourceType(
     normalizeString(content?.sourceType),
     fieldName,
@@ -273,9 +334,29 @@ const normalizePerOptionItems = (items) => {
     keySet.add(key);
     return {
       key,
-      ...normalizeContentBlock(item, `options.items[${index}]`),
+      ...normalizeOptionContent(item, `options.items[${index}]`),
     };
   });
+};
+
+const normalizeCorrectOptionKeys = (correctOptionKeys) => {
+  if (!Array.isArray(correctOptionKeys) || !correctOptionKeys.length) {
+    throw new Error("correctOptionKeys 必须是非空数组");
+  }
+
+  const cleaned = correctOptionKeys.map((key) => normalizeUpperString(key));
+  const keySet = new Set();
+  for (const key of cleaned) {
+    if (!key) {
+      throw new Error("correctOptionKeys 中存在空值");
+    }
+    if (keySet.has(key)) {
+      throw new Error(`correctOptionKeys 重复：${key}`);
+    }
+    keySet.add(key);
+  }
+
+  return cleaned;
 };
 
 const validateOptionMode = (optionMode) => {
@@ -289,10 +370,36 @@ const validateOptionMode = (optionMode) => {
   return normalized;
 };
 
-const validateQuestionPayload = (payload, { requireQuestionId = false } = {}) => {
+const validateEntryMode = (entryMode) => {
+  const normalized = normalizeString(entryMode);
+  if (
+    normalized !== ENTRY_MODE_SINGLE &&
+    normalized !== ENTRY_MODE_GROUPED
+  ) {
+    throw new Error("entryMode 仅支持 single 或 grouped");
+  }
+  return normalized;
+};
+
+const normalizeGroupOrder = (groupOrder, { required = false } = {}) => {
+  if (groupOrder === undefined || groupOrder === null || groupOrder === "") {
+    if (required) {
+      throw new Error("groupOrder 不能为空");
+    }
+    return 1;
+  }
+
+  const normalized = Number(groupOrder);
+  if (!Number.isInteger(normalized) || normalized <= 0) {
+    throw new Error("groupOrder 必须是大于 0 的整数");
+  }
+  return normalized;
+};
+
+const normalizeQuestionCore = (payload, { requireQuestionId = false } = {}) => {
   const questionId = normalizeString(payload?.questionId);
   const questionType = normalizeString(payload?.questionType);
-  const stem = normalizeContentBlock(payload?.stem, "stem");
+  const stem = normalizeRichStem(payload?.stem, "stem");
   const optionMode = validateOptionMode(payload?.optionMode);
   const optionKeys = normalizeOptionKeys(payload?.options?.keys);
   const correctOptionKeys = normalizeCorrectOptionKeys(payload?.correctOptionKeys);
@@ -343,7 +450,7 @@ const validateQuestionPayload = (payload, { requireQuestionId = false } = {}) =>
       throw new Error("grouped_asset 模式下 options.items 必须为空数组");
     }
 
-    const groupedAsset = normalizeContentBlock(
+    options.groupedAsset = normalizeOptionContent(
       {
         sourceType: CONTENT_SOURCE_IMAGE,
         text: "",
@@ -351,8 +458,6 @@ const validateQuestionPayload = (payload, { requireQuestionId = false } = {}) =>
       },
       "options.groupedAsset",
     );
-
-    options.groupedAsset = groupedAsset;
   }
 
   const optionKeySet = new Set(optionKeys);
@@ -372,6 +477,36 @@ const validateQuestionPayload = (payload, { requireQuestionId = false } = {}) =>
   };
 };
 
+const normalizeSingleQuestionPayload = (payload, { requireQuestionId = false } = {}) => {
+  const entryMode = validateEntryMode(payload?.entryMode || ENTRY_MODE_SINGLE);
+  if (entryMode !== ENTRY_MODE_SINGLE) {
+    throw new Error("createQuestion / updateQuestion 仅支持 single 模式");
+  }
+
+  return {
+    ...normalizeQuestionCore(payload, { requireQuestionId }),
+    entryMode,
+    groupId: "",
+    sharedStem: normalizeRichStem(payload?.sharedStem, "sharedStem", {
+      allowEmpty: true,
+    }),
+    groupOrder: 1,
+  };
+};
+
+const normalizeGroupedChildren = (children, sharedStem) => {
+  if (!Array.isArray(children) || !children.length) {
+    throw new Error("children 必须是非空数组");
+  }
+
+  return children.map((child, index) => ({
+    ...normalizeQuestionCore(child, { requireQuestionId: false }),
+    entryMode: ENTRY_MODE_GROUPED,
+    sharedStem,
+    groupOrder: index + 1,
+  }));
+};
+
 const getEventPayload = (event) => {
   if (
     event &&
@@ -389,6 +524,33 @@ const getEventPayload = (event) => {
   return payload;
 };
 
+const getQuestionById = async (questionId) => {
+  const resp = await db
+    .collection(QUESTIONS_COLLECTION)
+    .where({
+      questionId,
+    })
+    .limit(1)
+    .get();
+
+  return resp.data?.[0] || null;
+};
+
+const getQuestionsByGroupId = async (groupId) => {
+  const resp = await db
+    .collection(QUESTIONS_COLLECTION)
+    .where({
+      groupId,
+    })
+    .get();
+
+  return (resp.data || []).sort((left, right) => {
+    const leftOrder = Number(left?.groupOrder || 0);
+    const rightOrder = Number(right?.groupOrder || 0);
+    return leftOrder - rightOrder;
+  });
+};
+
 const stripQuestionByRole = (question, role) => {
   if (!question) {
     return null;
@@ -397,21 +559,30 @@ const stripQuestionByRole = (question, role) => {
   const base = {
     _id: question._id,
     questionId: question.questionId,
+    groupId: normalizeString(question.groupId),
     questionType: question.questionType || QUESTION_TYPE_CHOICE,
-    stem: question.stem || {
-      sourceType: CONTENT_SOURCE_TEXT,
-      text: "",
-      imageFileId: "",
-    },
-    optionMode: question.optionMode || OPTION_MODE_PER_OPTION,
-    options: question.options || {
-      keys: [],
-      items: [],
-      groupedAsset: {
-        sourceType: CONTENT_SOURCE_IMAGE,
-        imageFileId: "",
+    entryMode: question.entryMode || ENTRY_MODE_SINGLE,
+    sharedStem:
+      question.sharedStem && Object.keys(question.sharedStem).length
+        ? question.sharedStem
+        : {},
+    stem:
+      question.stem || {
+        sourceType: CONTENT_SOURCE_TEXT,
+        text: "",
+        imageFileIds: [],
       },
-    },
+    optionMode: question.optionMode || OPTION_MODE_PER_OPTION,
+    options:
+      question.options || {
+        keys: [],
+        items: [],
+        groupedAsset: {
+          sourceType: CONTENT_SOURCE_IMAGE,
+          imageFileId: "",
+        },
+      },
+    groupOrder: normalizeGroupOrder(question.groupOrder),
     createTime: question.createTime,
     updateTime: question.updateTime,
   };
@@ -432,7 +603,12 @@ const sortQuestions = (questions) =>
   [...questions].sort((left, right) => {
     const leftTime = Number(left?.createTime || 0);
     const rightTime = Number(right?.createTime || 0);
-    return rightTime - leftTime;
+    if (leftTime !== rightTime) {
+      return rightTime - leftTime;
+    }
+    const leftOrder = Number(left?.groupOrder || 0);
+    const rightOrder = Number(right?.groupOrder || 0);
+    return leftOrder - rightOrder;
   });
 
 const getOpenId = async () => {
@@ -472,15 +648,7 @@ const getQuestionDetail = async (event) => {
     return fail("questionId 不能为空");
   }
 
-  const resp = await db
-    .collection(QUESTIONS_COLLECTION)
-    .where({
-      questionId,
-    })
-    .limit(1)
-    .get();
-
-  const question = resp.data?.[0];
+  const question = await getQuestionById(questionId);
   if (!question) {
     return fail("题目不存在");
   }
@@ -488,26 +656,45 @@ const getQuestionDetail = async (event) => {
   return ok(stripQuestionByRole(question, user.role));
 };
 
-const buildQuestionDocument = async (payload, user, existingQuestion = null) => {
+const getQuestionGroupDetail = async (event) => {
+  const user = await ensureUserRecord();
+  const groupId = normalizeString(event?.data?.groupId || event?.groupId);
+  if (!groupId) {
+    return fail("groupId 不能为空");
+  }
+
+  const questions = await getQuestionsByGroupId(groupId);
+  if (!questions.length) {
+    return fail("题组不存在");
+  }
+
+  return ok({
+    groupId,
+    entryMode: ENTRY_MODE_GROUPED,
+    sharedStem:
+      questions[0].sharedStem && Object.keys(questions[0].sharedStem).length
+        ? questions[0].sharedStem
+        : {},
+    children: questions.map((question) => stripQuestionByRole(question, user.role)),
+  });
+};
+
+const buildSingleQuestionDocument = async (payload, user, existingQuestion = null) => {
   const mergedPayload = existingQuestion
     ? {
         questionId: existingQuestion.questionId,
         questionType: payload.questionType ?? existingQuestion.questionType,
+        entryMode: payload.entryMode ?? existingQuestion.entryMode,
+        sharedStem: payload.sharedStem ?? existingQuestion.sharedStem,
         stem: payload.stem ?? existingQuestion.stem,
         optionMode: payload.optionMode ?? existingQuestion.optionMode,
         options: payload.options ?? existingQuestion.options,
         correctOptionKeys:
           payload.correctOptionKeys ?? existingQuestion.correctOptionKeys,
       }
-    : {
-        questionType: payload.questionType,
-        stem: payload.stem,
-        optionMode: payload.optionMode,
-        options: payload.options,
-        correctOptionKeys: payload.correctOptionKeys,
-      };
+    : payload;
 
-  const validated = validateQuestionPayload(mergedPayload, {
+  const validated = normalizeSingleQuestionPayload(mergedPayload, {
     requireQuestionId: false,
   });
 
@@ -523,18 +710,22 @@ const buildQuestionDocument = async (payload, user, existingQuestion = null) => 
 const createQuestion = async (event) => {
   const user = await requireAdmin();
   const payload = getEventPayload(event);
-  const validated = validateQuestionPayload(payload);
+  const validated = normalizeSingleQuestionPayload(payload);
   const now = Date.now();
   const questionId = await generateQuestionId();
 
   await db.collection(QUESTIONS_COLLECTION).add({
     data: {
       questionId,
+      groupId: "",
       questionType: validated.questionType,
+      entryMode: ENTRY_MODE_SINGLE,
+      sharedStem: validated.sharedStem,
       stem: validated.stem,
       optionMode: validated.optionMode,
       options: validated.options,
       correctOptionKeys: validated.correctOptionKeys,
+      groupOrder: 1,
       createTime: now,
       updateTime: now,
       createdBy: user.openid,
@@ -555,27 +746,27 @@ const updateQuestion = async (event) => {
     return fail("questionId 不能为空");
   }
 
-  const resp = await db
-    .collection(QUESTIONS_COLLECTION)
-    .where({
-      questionId,
-    })
-    .limit(1)
-    .get();
-
-  const existingQuestion = resp.data?.[0];
+  const existingQuestion = await getQuestionById(questionId);
   if (!existingQuestion) {
     return fail("题目不存在");
   }
 
-  const validated = await buildQuestionDocument(payload, user, existingQuestion);
+  if ((existingQuestion.entryMode || ENTRY_MODE_SINGLE) !== ENTRY_MODE_SINGLE) {
+    return fail("关联题请使用题组更新接口");
+  }
+
+  const validated = await buildSingleQuestionDocument(payload, user, existingQuestion);
   await db.collection(QUESTIONS_COLLECTION).doc(existingQuestion._id).update({
     data: {
       questionType: validated.questionType,
+      entryMode: ENTRY_MODE_SINGLE,
+      sharedStem: validated.sharedStem,
       stem: validated.stem,
       optionMode: validated.optionMode,
       options: validated.options,
       correctOptionKeys: validated.correctOptionKeys,
+      groupId: "",
+      groupOrder: 1,
       updateTime: validated.updateTime,
       updatedBy: validated.updatedBy,
     },
@@ -586,6 +777,95 @@ const updateQuestion = async (event) => {
   });
 };
 
+const createQuestionGroup = async (event) => {
+  const user = await requireAdmin();
+  const payload = getEventPayload(event);
+  const sharedStem = normalizeRichStem(payload?.sharedStem, "sharedStem");
+  const children = normalizeGroupedChildren(payload?.children, sharedStem);
+  const groupId = await generateGroupId();
+  const now = Date.now();
+
+  await Promise.all(
+    children.map(async (child) => {
+      const questionId = await generateQuestionId();
+      await db.collection(QUESTIONS_COLLECTION).add({
+        data: {
+          questionId,
+          groupId,
+          questionType: child.questionType,
+          entryMode: ENTRY_MODE_GROUPED,
+          sharedStem,
+          stem: child.stem,
+          optionMode: child.optionMode,
+          options: child.options,
+          correctOptionKeys: child.correctOptionKeys,
+          groupOrder: child.groupOrder,
+          createTime: now,
+          updateTime: now,
+          createdBy: user.openid,
+          updatedBy: user.openid,
+        },
+      });
+    }),
+  );
+
+  return ok({
+    groupId,
+  });
+};
+
+const updateQuestionGroup = async (event) => {
+  const user = await requireAdmin();
+  const payload = getEventPayload(event);
+  const groupId = normalizeString(payload?.groupId);
+  if (!groupId) {
+    return fail("groupId 不能为空");
+  }
+
+  const existingQuestions = await getQuestionsByGroupId(groupId);
+  if (!existingQuestions.length) {
+    return fail("题组不存在");
+  }
+
+  const sharedStem = normalizeRichStem(payload?.sharedStem, "sharedStem");
+  const children = normalizeGroupedChildren(payload?.children, sharedStem);
+  const now = Date.now();
+
+  await Promise.all(
+    existingQuestions.map((question) =>
+      db.collection(QUESTIONS_COLLECTION).doc(question._id).remove(),
+    ),
+  );
+
+  await Promise.all(
+    children.map(async (child) => {
+      const questionId = normalizeString(child.questionId) || (await generateQuestionId());
+      await db.collection(QUESTIONS_COLLECTION).add({
+        data: {
+          questionId,
+          groupId,
+          questionType: child.questionType,
+          entryMode: ENTRY_MODE_GROUPED,
+          sharedStem,
+          stem: child.stem,
+          optionMode: child.optionMode,
+          options: child.options,
+          correctOptionKeys: child.correctOptionKeys,
+          groupOrder: child.groupOrder,
+          createTime: now,
+          updateTime: now,
+          createdBy: user.openid,
+          updatedBy: user.openid,
+        },
+      });
+    }),
+  );
+
+  return ok({
+    groupId,
+  });
+};
+
 const deleteQuestion = async (event) => {
   await requireAdmin();
   const questionId = normalizeString(event?.data?.questionId || event?.questionId);
@@ -593,15 +873,7 @@ const deleteQuestion = async (event) => {
     return fail("questionId 不能为空");
   }
 
-  const resp = await db
-    .collection(QUESTIONS_COLLECTION)
-    .where({
-      questionId,
-    })
-    .limit(1)
-    .get();
-
-  const existingQuestion = resp.data?.[0];
+  const existingQuestion = await getQuestionById(questionId);
   if (!existingQuestion) {
     return fail("题目不存在");
   }
@@ -624,10 +896,16 @@ const dispatch = async (event) => {
       return listQuestions();
     case "getQuestionDetail":
       return getQuestionDetail(event);
+    case "getQuestionGroupDetail":
+      return getQuestionGroupDetail(event);
     case "createQuestion":
       return createQuestion(event);
     case "updateQuestion":
       return updateQuestion(event);
+    case "createQuestionGroup":
+      return createQuestionGroup(event);
+    case "updateQuestionGroup":
+      return updateQuestionGroup(event);
     case "deleteQuestion":
       return deleteQuestion(event);
     case "getMiniProgramCode":
@@ -637,7 +915,6 @@ const dispatch = async (event) => {
   }
 };
 
-// 获取小程序二维码
 const getMiniProgramCode = async () => {
   const resp = await cloud.openapi.wxacode.get({
     path: "pages/index/index",
@@ -650,7 +927,7 @@ const getMiniProgramCode = async () => {
   return ok(upload.fileID);
 };
 
-exports.main = async (event, context) => {
+exports.main = async (event) => {
   try {
     return await dispatch(event || {});
   } catch (error) {

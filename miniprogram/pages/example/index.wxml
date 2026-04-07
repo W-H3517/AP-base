@@ -1,8 +1,6 @@
 <view class="page-container">
   <view class="title">题目列表</view>
-  <view class="top_tip">
-    当前用户：{{currentUser.role || '未同步'}}。普通用户只能浏览题目，管理员可以增删改查。
-  </view>
+  <view class="top_tip">当前用户：{{currentUser.role || '未同步'}}。普通用户只能浏览题目，管理员可以增删改查。</view>
 
   <view class="summary-card">
     <view class="summary-row">
@@ -16,347 +14,336 @@
   </view>
 
   <view class="toolbar">
-    <view class="btn-full toolbar-btn" bindtap="refreshCurrentUser" loading="{{loadingUser}}">
-      刷新用户
-    </view>
-    <view class="btn-full toolbar-btn" bindtap="refreshQuestions" loading="{{loadingQuestions}}">
-      刷新题目
-    </view>
-    <view class="btn-full toolbar-btn" wx:if="{{isAdmin}}" bindtap="openCreateQuestion">
-      新增题目
-    </view>
+    <view class="btn-full toolbar-btn" bindtap="refreshCurrentUser" loading="{{loadingUser}}">刷新用户</view>
+    <view class="btn-full toolbar-btn" bindtap="refreshQuestions" loading="{{loadingQuestions}}">刷新题目</view>
+    <view class="btn-full toolbar-btn" wx:if="{{isAdmin}}" bindtap="openCreateQuestion">新增题目</view>
   </view>
 
-  <view class="empty-state" wx:if="{{!questions.length && !loadingQuestions}}">
-    暂无题目数据，请先初始化集合并由管理员新增题目。
-  </view>
+  <view class="empty-state" wx:if="{{!questions.length && !loadingQuestions}}">暂无题目数据，请先初始化集合并由管理员新增题目。</view>
 
   <view class="question-list" wx:if="{{questions.length}}">
     <view class="question-card" wx:for="{{questions}}" wx:key="questionId" wx:for-item="question">
       <view class="question-header">
         <view>
           <view class="question-id">{{question.questionId}}</view>
-          <view class="question-mode">
-            {{question.optionMode === 'grouped_asset' ? '大图模式' : '独立选项模式'}}
+          <view class="question-meta">
+            <text wx:if="{{question.entryMode === 'grouped'}}" class="tag tag-strong">关联题</text>
+            <text wx:if="{{question.entryMode === 'single'}}" class="tag">单题</text>
+            <text wx:if="{{question.entryMode === 'grouped'}}" class="tag">组序 {{question.groupOrder}}</text>
+            <text wx:if="{{question.groupId}}" class="tag">groupId: {{question.groupId}}</text>
           </view>
         </view>
         <view class="question-actions">
-          <button size="mini" bindtap="viewQuestionDetail" data-questionid="{{question.questionId}}">
-            详情
-          </button>
-          <button
-            size="mini"
-            wx:if="{{isAdmin}}"
-            bindtap="openEditQuestion"
-            data-questionid="{{question.questionId}}"
-          >
-            编辑
-          </button>
-          <button
-            size="mini"
-            type="warn"
-            wx:if="{{isAdmin}}"
-            loading="{{deletingQuestionId === question.questionId}}"
-            bindtap="deleteQuestion"
-            data-questionid="{{question.questionId}}"
-          >
-            删除
-          </button>
+          <button size="mini" bindtap="viewQuestionDetail" data-questionid="{{question.questionId}}" data-groupid="{{question.groupId}}">详情</button>
+          <button size="mini" wx:if="{{isAdmin}}" bindtap="openEditQuestion" data-questionid="{{question.questionId}}" data-groupid="{{question.groupId}}">编辑</button>
+          <button size="mini" type="warn" wx:if="{{isAdmin}}" loading="{{deletingQuestionId === question.questionId}}" bindtap="deleteQuestion" data-questionid="{{question.questionId}}">删除</button>
+        </view>
+      </view>
+
+      <view wx:if="{{question.entryMode === 'grouped'}}">
+        <view class="section-title">公共题干</view>
+        <view wx:if="{{question.sharedStem.sourceType === 'text'}}" class="stem-text-card">{{question.sharedStem.text}}</view>
+        <view wx:if="{{question.sharedStem.sourceType === 'image'}}" class="content-image-list">
+          <view class="content-image-item" wx:for="{{question.sharedStem.imageFileIds}}" wx:key="*this">
+            <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-questionid="{{question.questionId}}" data-groupid="{{question.groupId}}"></image>
+          </view>
         </view>
       </view>
 
       <view class="section-title">题干</view>
-      <view wx:if="{{question.stem.sourceType === 'text'}}" class="stem-text-card">
-        {{question.stem.text}}
+      <view wx:if="{{question.stem.sourceType === 'text'}}" class="stem-text-card">{{question.stem.text}}</view>
+      <view wx:if="{{question.stem.sourceType === 'image'}}" class="content-image-list">
+        <view class="content-image-item" wx:for="{{question.stem.imageFileIds}}" wx:key="*this">
+          <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-questionid="{{question.questionId}}" data-groupid="{{question.groupId}}"></image>
+        </view>
       </view>
-      <image
-        wx:if="{{question.stem.sourceType === 'image' && question.stem.imageFileId}}"
-        class="preview-image clickable-image"
-        mode="widthFix"
-        src="{{question.stem.imageFileId}}"
-        bindtap="previewQuestionImages"
-        data-src="{{question.stem.imageFileId}}"
-        data-questionid="{{question.questionId}}"
-      ></image>
 
       <view class="section-title">选项</view>
-      <view wx:if="{{question.optionMode === 'per_option'}}">
-        <view class="option-list">
-          <view class="option-card" wx:for="{{question.options.items}}" wx:key="key" wx:for-item="option">
-            <view class="option-key">{{option.key}}</view>
-            <view wx:if="{{option.sourceType === 'text'}}" class="option-text-card">
-              {{option.text}}
-            </view>
-            <image
-              wx:if="{{option.sourceType === 'image' && option.imageFileId}}"
-              class="option-image clickable-image"
-              mode="widthFix"
-              src="{{option.imageFileId}}"
-              bindtap="previewQuestionImages"
-              data-src="{{option.imageFileId}}"
-              data-questionid="{{question.questionId}}"
-            ></image>
-          </view>
+      <view wx:if="{{question.optionMode === 'per_option'}}" class="option-list">
+        <view class="option-card" wx:for="{{question.options.items}}" wx:key="key" wx:for-item="option">
+          <view class="option-key">{{option.key}}</view>
+          <view wx:if="{{option.sourceType === 'text'}}" class="option-text-card">{{option.text}}</view>
+          <image wx:if="{{option.sourceType === 'image' && option.imageFileId}}" class="option-image clickable-image" mode="widthFix" src="{{option.imageFileId}}" bindtap="previewQuestionImages" data-src="{{option.imageFileId}}" data-questionid="{{question.questionId}}" data-groupid="{{question.groupId}}"></image>
         </view>
       </view>
       <view wx:if="{{question.optionMode === 'grouped_asset'}}">
-        <view wx:if="{{question.options.groupedAsset.imageFileId}}">
-          <image
-            class="preview-image clickable-image"
-            mode="widthFix"
-            src="{{question.options.groupedAsset.imageFileId}}"
-            bindtap="previewQuestionImages"
-            data-src="{{question.options.groupedAsset.imageFileId}}"
-            data-questionid="{{question.questionId}}"
-          ></image>
-        </view>
+        <image wx:if="{{question.options.groupedAsset.imageFileId}}" class="preview-image clickable-image" mode="widthFix" src="{{question.options.groupedAsset.imageFileId}}" bindtap="previewQuestionImages" data-src="{{question.options.groupedAsset.imageFileId}}" data-questionid="{{question.questionId}}" data-groupid="{{question.groupId}}"></image>
         <view class="chip-list">
           <view class="chip" wx:for="{{question.options.keys}}" wx:key="*this">{{item}}</view>
         </view>
       </view>
 
-      <view class="answer-row" wx:if="{{isAdmin}}">
-        正确答案：{{question.correctOptionText}}
-      </view>
+      <view class="answer-row" wx:if="{{isAdmin}}">正确答案：{{question.correctOptionText}}</view>
     </view>
   </view>
 
   <view class="modal-mask" wx:if="{{showDetailModal}}">
     <view class="detail-modal">
       <view class="modal-title">题目详情</view>
-      <view class="detail-question-id">题目 ID：{{selectedQuestion.questionId}}</view>
-      <view class="section-title">题干</view>
-      <view wx:if="{{selectedQuestion.stem.sourceType === 'text'}}" class="stem-text-card">
-        {{selectedQuestion.stem.text}}
-      </view>
-      <image
-        wx:if="{{selectedQuestion.stem.sourceType === 'image' && selectedQuestion.stem.imageFileId}}"
-        class="preview-image clickable-image"
-        mode="widthFix"
-        src="{{selectedQuestion.stem.imageFileId}}"
-        bindtap="previewQuestionImages"
-        data-src="{{selectedQuestion.stem.imageFileId}}"
-        data-questionid="{{selectedQuestion.questionId}}"
-      ></image>
-
-      <view class="section-title">选项</view>
-      <view wx:if="{{selectedQuestion.optionMode === 'per_option'}}">
-        <view class="option-list">
-          <view class="option-card" wx:for="{{selectedQuestion.options.items}}" wx:key="key" wx:for-item="option">
-            <view class="option-key">{{option.key}}</view>
-            <view wx:if="{{option.sourceType === 'text'}}" class="option-text-card">
-              {{option.text}}
-            </view>
-            <image
-              wx:if="{{option.sourceType === 'image' && option.imageFileId}}"
-              class="option-image clickable-image"
-              mode="widthFix"
-              src="{{option.imageFileId}}"
-              bindtap="previewQuestionImages"
-              data-src="{{option.imageFileId}}"
-              data-questionid="{{selectedQuestion.questionId}}"
-            ></image>
+      <view wx:if="{{selectedDetailType === 'single'}}">
+        <view class="detail-question-id">题目 ID：{{selectedDetail.questionId}}</view>
+        <view wx:if="{{selectedDetail.entryMode === 'grouped'}}" class="section-title">公共题干</view>
+        <view wx:if="{{selectedDetail.entryMode === 'grouped' && selectedDetail.sharedStem.sourceType === 'text'}}" class="stem-text-card">{{selectedDetail.sharedStem.text}}</view>
+        <view wx:if="{{selectedDetail.entryMode === 'grouped' && selectedDetail.sharedStem.sourceType === 'image'}}" class="content-image-list">
+          <view class="content-image-item" wx:for="{{selectedDetail.sharedStem.imageFileIds}}" wx:key="*this">
+            <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-questionid="{{selectedDetail.questionId}}" data-groupid="{{selectedDetail.groupId}}"></image>
           </view>
         </view>
+        <view class="section-title">题干</view>
+        <view wx:if="{{selectedDetail.stem.sourceType === 'text'}}" class="stem-text-card">{{selectedDetail.stem.text}}</view>
+        <view wx:if="{{selectedDetail.stem.sourceType === 'image'}}" class="content-image-list">
+          <view class="content-image-item" wx:for="{{selectedDetail.stem.imageFileIds}}" wx:key="*this">
+            <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-questionid="{{selectedDetail.questionId}}" data-groupid="{{selectedDetail.groupId}}"></image>
+          </view>
+        </view>
+        <view class="section-title">选项</view>
+        <view wx:if="{{selectedDetail.optionMode === 'per_option'}}" class="option-list">
+          <view class="option-card" wx:for="{{selectedDetail.options.items}}" wx:key="key" wx:for-item="option">
+            <view class="option-key">{{option.key}}</view>
+            <view wx:if="{{option.sourceType === 'text'}}" class="option-text-card">{{option.text}}</view>
+            <image wx:if="{{option.sourceType === 'image' && option.imageFileId}}" class="option-image clickable-image" mode="widthFix" src="{{option.imageFileId}}" bindtap="previewQuestionImages" data-src="{{option.imageFileId}}" data-questionid="{{selectedDetail.questionId}}" data-groupid="{{selectedDetail.groupId}}"></image>
+          </view>
+        </view>
+        <view wx:if="{{selectedDetail.optionMode === 'grouped_asset'}}">
+          <image wx:if="{{selectedDetail.options.groupedAsset.imageFileId}}" class="preview-image clickable-image" mode="widthFix" src="{{selectedDetail.options.groupedAsset.imageFileId}}" bindtap="previewQuestionImages" data-src="{{selectedDetail.options.groupedAsset.imageFileId}}" data-questionid="{{selectedDetail.questionId}}" data-groupid="{{selectedDetail.groupId}}"></image>
+          <view class="chip-list">
+            <view class="chip" wx:for="{{selectedDetail.options.keys}}" wx:key="*this">{{item}}</view>
+          </view>
+        </view>
+        <view class="answer-row" wx:if="{{isAdmin}}">正确答案：{{selectedDetail.correctOptionText}}</view>
       </view>
-      <view wx:if="{{selectedQuestion.optionMode === 'grouped_asset'}}">
-        <image
-          wx:if="{{selectedQuestion.options.groupedAsset.imageFileId}}"
-          class="preview-image clickable-image"
-          mode="widthFix"
-          src="{{selectedQuestion.options.groupedAsset.imageFileId}}"
-          bindtap="previewQuestionImages"
-          data-src="{{selectedQuestion.options.groupedAsset.imageFileId}}"
-          data-questionid="{{selectedQuestion.questionId}}"
-        ></image>
-        <view class="chip-list">
-          <view class="chip" wx:for="{{selectedQuestion.options.keys}}" wx:key="*this">{{item}}</view>
+
+      <view wx:if="{{selectedDetailType === 'grouped'}}">
+        <view class="detail-question-id">题组 ID：{{selectedDetail.groupId}}</view>
+        <view class="section-title">公共题干</view>
+        <view wx:if="{{selectedDetail.sharedStem.sourceType === 'text'}}" class="stem-text-card">{{selectedDetail.sharedStem.text}}</view>
+        <view wx:if="{{selectedDetail.sharedStem.sourceType === 'image'}}" class="content-image-list">
+          <view class="content-image-item" wx:for="{{selectedDetail.sharedStem.imageFileIds}}" wx:key="*this" wx:for-index="imgIndex">
+            <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-groupid="{{selectedDetail.groupId}}"></image>
+          </view>
+        </view>
+        <view class="section-title">子题</view>
+        <view class="question-card question-card-inner" wx:for="{{selectedDetail.children}}" wx:key="questionId" wx:for-item="child">
+          <view class="question-id">第 {{child.groupOrder}} 题 {{child.questionId}}</view>
+          <view class="section-title">题干</view>
+          <view wx:if="{{child.stem.sourceType === 'text'}}" class="stem-text-card">{{child.stem.text}}</view>
+          <view wx:if="{{child.stem.sourceType === 'image'}}" class="content-image-list">
+            <view class="content-image-item" wx:for="{{child.stem.imageFileIds}}" wx:key="*this" wx:for-index="imgIndex">
+              <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-questionid="{{child.questionId}}" data-groupid="{{child.groupId}}"></image>
+            </view>
+          </view>
+          <view class="section-title">选项</view>
+          <view wx:if="{{child.optionMode === 'per_option'}}" class="option-list">
+            <view class="option-card" wx:for="{{child.options.items}}" wx:key="key" wx:for-item="option">
+              <view class="option-key">{{option.key}}</view>
+              <view wx:if="{{option.sourceType === 'text'}}" class="option-text-card">{{option.text}}</view>
+              <image wx:if="{{option.sourceType === 'image' && option.imageFileId}}" class="option-image clickable-image" mode="widthFix" src="{{option.imageFileId}}" bindtap="previewQuestionImages" data-src="{{option.imageFileId}}" data-questionid="{{child.questionId}}" data-groupid="{{child.groupId}}"></image>
+            </view>
+          </view>
+          <view wx:if="{{child.optionMode === 'grouped_asset'}}">
+            <image wx:if="{{child.options.groupedAsset.imageFileId}}" class="preview-image clickable-image" mode="widthFix" src="{{child.options.groupedAsset.imageFileId}}" bindtap="previewQuestionImages" data-src="{{child.options.groupedAsset.imageFileId}}" data-questionid="{{child.questionId}}" data-groupid="{{child.groupId}}"></image>
+            <view class="chip-list">
+              <view class="chip" wx:for="{{child.options.keys}}" wx:key="*this">{{item}}</view>
+            </view>
+          </view>
+          <view class="answer-row" wx:if="{{isAdmin}}">正确答案：{{child.correctOptionText}}</view>
         </view>
       </view>
 
-      <view class="answer-row" wx:if="{{isAdmin}}">
-        正确答案：{{selectedQuestion.correctOptionText}}
-      </view>
       <view class="btn-full" bindtap="closeDetailModal">关闭</view>
     </view>
   </view>
 
   <view class="modal-mask" wx:if="{{showEditorModal}}">
     <view class="editor-modal">
-      <view class="modal-title">
-        {{editorMode === 'edit' ? '编辑题目' : '新增题目'}}
-      </view>
-      <view class="detail-question-id" wx:if="{{editorMode === 'edit'}}">
-        题目 ID：{{editorForm.questionId}}
-      </view>
-
-      <view class="section-title">题干</view>
+      <view class="modal-title">{{editorMode === 'edit' ? '编辑题目' : '新增题目'}}</view>
+      <view class="section-title">录入模式</view>
       <view class="segmented">
-        <view
-          class="segmented-item {{editorForm.stem.sourceType === 'text' ? 'segmented-item-active' : ''}}"
-          bindtap="switchStemSourceType"
-          data-type="text"
-        >
-          文本
-        </view>
-        <view
-          class="segmented-item {{editorForm.stem.sourceType === 'image' ? 'segmented-item-active' : ''}}"
-          bindtap="switchStemSourceType"
-          data-type="image"
-        >
-          图片
-        </view>
-      </view>
-      <textarea
-        wx:if="{{editorForm.stem.sourceType === 'text'}}"
-        class="text-area"
-        value="{{editorForm.stem.text}}"
-        bindinput="onStemTextInput"
-        placeholder="请输入题干文本"
-        auto-height
-      ></textarea>
-      <view wx:if="{{editorForm.stem.sourceType === 'image'}}">
-        <view class="btn-full secondary-btn" bindtap="uploadStemImage">上传题干图片</view>
-        <image
-          wx:if="{{editorForm.stem.imageFileId}}"
-          class="preview-image clickable-image"
-          mode="widthFix"
-          src="{{editorForm.stem.imageFileId}}"
-          bindtap="previewSingleImage"
-          data-src="{{editorForm.stem.imageFileId}}"
-        ></image>
+        <view class="segmented-item {{editorEntryMode === 'single' ? 'segmented-item-active' : ''}}" bindtap="switchEditorEntryMode" data-mode="single">单题</view>
+        <view class="segmented-item {{editorEntryMode === 'grouped' ? 'segmented-item-active' : ''}}" bindtap="switchEditorEntryMode" data-mode="grouped">关联题</view>
       </view>
 
-      <view class="section-title">选项模式</view>
-      <view class="segmented">
-        <view
-          class="segmented-item {{editorForm.optionMode === 'per_option' ? 'segmented-item-active' : ''}}"
-          bindtap="switchOptionMode"
-          data-mode="per_option"
-        >
-          独立选项
-        </view>
-        <view
-          class="segmented-item {{editorForm.optionMode === 'grouped_asset' ? 'segmented-item-active' : ''}}"
-          bindtap="switchOptionMode"
-          data-mode="grouped_asset"
-        >
-          大图模式
-        </view>
-      </view>
-      <view class="mode-tip">
-        独立选项模式下，每个选项可单独填写文本或上传图片。大图模式下只需上传一张覆盖多选项的图片。
-      </view>
+      <view wx:if="{{editorEntryMode === 'single'}}">
+        <view class="detail-question-id" wx:if="{{editorMode === 'edit'}}">题目 ID：{{editorForm.single.questionId}}</view>
 
-      <view wx:if="{{editorForm.optionMode === 'per_option'}}">
-        <view class="option-editor" wx:for="{{editorForm.options.items}}" wx:key="key" wx:for-item="option" wx:for-index="index">
-          <view class="option-editor-top">
-            <input
-              class="option-key-input"
-              value="{{option.key}}"
-              data-index="{{index}}"
-              bindinput="onEditorOptionKeyInput"
-              maxlength="6"
-            />
-            <view class="segmented segmented-small">
-              <view
-                class="segmented-item segmented-item-small {{option.sourceType === 'text' ? 'segmented-item-active' : ''}}"
-                bindtap="switchOptionSourceType"
-                data-index="{{index}}"
-                data-type="text"
-              >
-                文本
+        <view class="section-title">题干</view>
+        <view class="segmented">
+          <view class="segmented-item {{editorForm.single.stem.sourceType === 'text' ? 'segmented-item-active' : ''}}" bindtap="switchStemSourceType" data-type="text">文本</view>
+          <view class="segmented-item {{editorForm.single.stem.sourceType === 'image' ? 'segmented-item-active' : ''}}" bindtap="switchStemSourceType" data-type="image">图片</view>
+        </view>
+        <textarea wx:if="{{editorForm.single.stem.sourceType === 'text'}}" class="text-area" value="{{editorForm.single.stem.text}}" bindinput="onStemTextInput" placeholder="请输入题干文本" auto-height></textarea>
+        <view wx:if="{{editorForm.single.stem.sourceType === 'image'}}">
+          <view class="btn-full secondary-btn" bindtap="uploadStemImages">上传题干图片</view>
+          <view class="content-image-list">
+          <view class="content-image-item" wx:for="{{editorForm.single.stem.imageFileIds}}" wx:key="*this" wx:for-index="imgIndex">
+              <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewSingleImage" data-src="{{item}}"></image>
+              <view class="mini-actions"><button size="mini" type="warn" bindtap="removeStemImage" data-index="{{imgIndex}}">删除</button></view>
+            </view>
+          </view>
+        </view>
+
+        <view class="section-title">选项模式</view>
+        <view class="segmented">
+          <view class="segmented-item {{editorForm.single.optionMode === 'per_option' ? 'segmented-item-active' : ''}}" bindtap="switchOptionMode" data-mode="per_option">独立选项</view>
+          <view class="segmented-item {{editorForm.single.optionMode === 'grouped_asset' ? 'segmented-item-active' : ''}}" bindtap="switchOptionMode" data-mode="grouped_asset">大图模式</view>
+        </view>
+
+        <view wx:if="{{editorForm.single.optionMode === 'per_option'}}">
+          <view class="option-editor" wx:for="{{editorForm.single.options.items}}" wx:key="key" wx:for-item="option" wx:for-index="index">
+            <view class="option-editor-top">
+              <input class="option-key-input" value="{{option.key}}" data-index="{{index}}" bindinput="onOptionKeyInput" maxlength="6" />
+              <view class="segmented segmented-small">
+                <view class="segmented-item segmented-item-small {{option.sourceType === 'text' ? 'segmented-item-active' : ''}}" bindtap="switchOptionSourceType" data-index="{{index}}" data-type="text">文本</view>
+                <view class="segmented-item segmented-item-small {{option.sourceType === 'image' ? 'segmented-item-active' : ''}}" bindtap="switchOptionSourceType" data-index="{{index}}" data-type="image">图片</view>
               </view>
-              <view
-                class="segmented-item segmented-item-small {{option.sourceType === 'image' ? 'segmented-item-active' : ''}}"
-                bindtap="switchOptionSourceType"
-                data-index="{{index}}"
-                data-type="image"
-              >
-                图片
+              <button size="mini" type="warn" bindtap="removeOption" data-index="{{index}}">删除</button>
+            </view>
+            <textarea wx:if="{{option.sourceType === 'text'}}" class="text-area text-area-small" value="{{option.text}}" bindinput="onOptionTextInput" data-index="{{index}}" placeholder="请输入选项 {{option.key}} 文本" auto-height></textarea>
+            <view wx:if="{{option.sourceType === 'image'}}">
+              <view class="btn-full secondary-btn" bindtap="uploadOptionImage" data-index="{{index}}">上传选项图片</view>
+              <image wx:if="{{option.imageFileId}}" class="option-image clickable-image" mode="widthFix" src="{{option.imageFileId}}" bindtap="previewSingleImage" data-src="{{option.imageFileId}}"></image>
+              <view class="mini-actions"><button size="mini" type="warn" bindtap="removeOptionImage" data-index="{{index}}">删除图片</button></view>
+            </view>
+          </view>
+          <view class="btn-full" bindtap="addOption">新增选项</view>
+        </view>
+
+        <view wx:if="{{editorForm.single.optionMode === 'grouped_asset'}}">
+          <view class="grouped-asset-box">
+            <view class="grouped-asset-label">覆盖大图</view>
+            <view class="btn-full secondary-btn" bindtap="uploadGroupedAssetImage">上传覆盖大图</view>
+            <image wx:if="{{editorForm.single.options.groupedAsset.imageFileId}}" class="preview-image clickable-image" mode="widthFix" src="{{editorForm.single.options.groupedAsset.imageFileId}}" bindtap="previewSingleImage" data-src="{{editorForm.single.options.groupedAsset.imageFileId}}"></image>
+            <view class="mini-actions"><button size="mini" type="warn" bindtap="removeGroupedAssetImage">删除图片</button></view>
+          </view>
+          <view class="grouped-key-head">
+            <view class="section-title">选项标识</view>
+            <view class="grouped-key-hint">请保持 Key 唯一，例如 A/B/C/D。</view>
+          </view>
+          <view class="grouped-key-list">
+            <view class="grouped-key-item" wx:for="{{editorForm.single.options.keys}}" wx:key="*this" wx:for-item="key" wx:for-index="keyIndex">
+              <input class="option-key-input" value="{{key}}" data-index="{{keyIndex}}" bindinput="onOptionKeyInput" maxlength="6" />
+              <button size="mini" type="warn" bindtap="removeOption" data-index="{{keyIndex}}">删除</button>
+            </view>
+          </view>
+          <view class="btn-full" bindtap="addOption">新增选项标识</view>
+        </view>
+
+        <view class="section-title">正确答案</view>
+        <checkbox-group bindchange="onCorrectOptionChange">
+          <label class="checkbox-item" wx:for="{{editorForm.single.options.keys}}" wx:key="*this" wx:for-item="key">
+            <checkbox value="{{key}}" checked="{{editorForm.single.correctOptionKeys.indexOf(key) !== -1}}" />
+            <text>{{key}}</text>
+          </label>
+        </checkbox-group>
+      </view>
+
+      <view wx:if="{{editorEntryMode === 'grouped'}}">
+        <view class="detail-question-id" wx:if="{{editorMode === 'edit'}}">题组 ID：{{editorForm.grouped.groupId}}</view>
+        <view class="section-title">公共题干</view>
+        <view class="segmented">
+          <view class="segmented-item {{editorForm.grouped.sharedStem.sourceType === 'text' ? 'segmented-item-active' : ''}}" bindtap="switchStemSourceType" data-scope="group-shared" data-type="text">文本</view>
+          <view class="segmented-item {{editorForm.grouped.sharedStem.sourceType === 'image' ? 'segmented-item-active' : ''}}" bindtap="switchStemSourceType" data-scope="group-shared" data-type="image">图片</view>
+        </view>
+        <textarea wx:if="{{editorForm.grouped.sharedStem.sourceType === 'text'}}" class="text-area" value="{{editorForm.grouped.sharedStem.text}}" bindinput="onStemTextInput" data-scope="group-shared" placeholder="请输入公共题干文本" auto-height></textarea>
+        <view wx:if="{{editorForm.grouped.sharedStem.sourceType === 'image'}}">
+          <view class="btn-full secondary-btn" bindtap="uploadStemImages" data-scope="group-shared">上传公共题干图片</view>
+          <view class="content-image-list">
+            <view class="content-image-item" wx:for="{{editorForm.grouped.sharedStem.imageFileIds}}" wx:key="*this" wx:for-index="imgIndex">
+              <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewSingleImage" data-src="{{item}}"></image>
+              <view class="mini-actions"><button size="mini" type="warn" bindtap="removeStemImage" data-scope="group-shared" data-index="{{imgIndex}}">删除</button></view>
+            </view>
+          </view>
+        </view>
+
+        <view class="section-title">子题列表</view>
+        <view class="question-card question-card-inner" wx:for="{{editorForm.grouped.children}}" wx:key="questionId" wx:for-item="child" wx:for-index="childIndex">
+          <view class="question-header">
+            <view class="question-id">第 {{childIndex + 1}} 题</view>
+            <view class="question-actions">
+              <button size="mini" bindtap="moveChildQuestionUp" data-child-index="{{childIndex}}">上移</button>
+              <button size="mini" bindtap="moveChildQuestionDown" data-child-index="{{childIndex}}">下移</button>
+              <button size="mini" type="warn" bindtap="removeChildQuestion" data-child-index="{{childIndex}}">删除子题</button>
+            </view>
+          </view>
+          <view class="detail-question-id" wx:if="{{editorMode === 'edit' && child.questionId}}">题目 ID：{{child.questionId}}</view>
+
+          <view class="section-title">题干</view>
+          <view class="segmented">
+            <view class="segmented-item {{child.stem.sourceType === 'text' ? 'segmented-item-active' : ''}}" bindtap="switchStemSourceType" data-scope="group-child" data-child-index="{{childIndex}}" data-type="text">文本</view>
+            <view class="segmented-item {{child.stem.sourceType === 'image' ? 'segmented-item-active' : ''}}" bindtap="switchStemSourceType" data-scope="group-child" data-child-index="{{childIndex}}" data-type="image">图片</view>
+          </view>
+          <textarea wx:if="{{child.stem.sourceType === 'text'}}" class="text-area" value="{{child.stem.text}}" bindinput="onStemTextInput" data-scope="group-child" data-child-index="{{childIndex}}" placeholder="请输入子题题干文本" auto-height></textarea>
+          <view wx:if="{{child.stem.sourceType === 'image'}}">
+            <view class="btn-full secondary-btn" bindtap="uploadStemImages" data-scope="group-child" data-child-index="{{childIndex}}">上传子题图片</view>
+            <view class="content-image-list">
+              <view class="content-image-item" wx:for="{{child.stem.imageFileIds}}" wx:key="*this" wx:for-index="imgIndex">
+                <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewSingleImage" data-src="{{item}}"></image>
+                <view class="mini-actions"><button size="mini" type="warn" bindtap="removeStemImage" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{imgIndex}}">删除</button></view>
               </view>
             </view>
-            <button size="mini" type="warn" bindtap="removeOption" data-index="{{index}}">
-              删除
-            </button>
           </view>
-          <textarea
-            wx:if="{{option.sourceType === 'text'}}"
-            class="text-area text-area-small"
-            value="{{option.text}}"
-            bindinput="onOptionTextInput"
-            data-index="{{index}}"
-            placeholder="请输入选项 {{option.key}} 文本"
-            auto-height
-          ></textarea>
-          <view wx:if="{{option.sourceType === 'image'}}">
-            <view class="btn-full secondary-btn" bindtap="uploadOptionImage" data-index="{{index}}">
-              上传选项图片
+
+          <view class="section-title">选项模式</view>
+          <view class="segmented">
+            <view class="segmented-item {{child.optionMode === 'per_option' ? 'segmented-item-active' : ''}}" bindtap="switchOptionMode" data-scope="group-child" data-child-index="{{childIndex}}" data-mode="per_option">独立选项</view>
+            <view class="segmented-item {{child.optionMode === 'grouped_asset' ? 'segmented-item-active' : ''}}" bindtap="switchOptionMode" data-scope="group-child" data-child-index="{{childIndex}}" data-mode="grouped_asset">大图模式</view>
+          </view>
+
+          <view wx:if="{{child.optionMode === 'per_option'}}">
+            <view class="option-editor" wx:for="{{child.options.items}}" wx:key="key" wx:for-item="option" wx:for-index="optIndex">
+              <view class="option-editor-top">
+                <input class="option-key-input" value="{{option.key}}" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{optIndex}}" bindinput="onOptionKeyInput" maxlength="6" />
+                <view class="segmented segmented-small">
+                  <view class="segmented-item segmented-item-small {{option.sourceType === 'text' ? 'segmented-item-active' : ''}}" bindtap="switchOptionSourceType" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{optIndex}}" data-type="text">文本</view>
+                  <view class="segmented-item segmented-item-small {{option.sourceType === 'image' ? 'segmented-item-active' : ''}}" bindtap="switchOptionSourceType" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{optIndex}}" data-type="image">图片</view>
+                </view>
+                <button size="mini" type="warn" bindtap="removeOption" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{optIndex}}">删除</button>
+              </view>
+              <textarea wx:if="{{option.sourceType === 'text'}}" class="text-area text-area-small" value="{{option.text}}" bindinput="onOptionTextInput" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{optIndex}}" placeholder="请输入选项 {{option.key}} 文本" auto-height></textarea>
+              <view wx:if="{{option.sourceType === 'image'}}">
+                <view class="btn-full secondary-btn" bindtap="uploadOptionImage" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{optIndex}}">上传选项图片</view>
+                <image wx:if="{{option.imageFileId}}" class="option-image clickable-image" mode="widthFix" src="{{option.imageFileId}}" bindtap="previewSingleImage" data-src="{{option.imageFileId}}"></image>
+                <view class="mini-actions"><button size="mini" type="warn" bindtap="removeOptionImage" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{optIndex}}">删除图片</button></view>
+              </view>
             </view>
-            <image
-              wx:if="{{option.imageFileId}}"
-              class="option-image clickable-image"
-              mode="widthFix"
-              src="{{option.imageFileId}}"
-              bindtap="previewSingleImage"
-              data-src="{{option.imageFileId}}"
-            ></image>
+            <view class="btn-full" bindtap="addOption" data-scope="group-child" data-child-index="{{childIndex}}">新增选项</view>
           </view>
-        </view>
-        <view class="btn-full" bindtap="addOption">新增选项</view>
-      </view>
 
-      <view wx:if="{{editorForm.optionMode === 'grouped_asset'}}">
-        <view class="grouped-asset-box">
-          <view class="grouped-asset-label">覆盖大图</view>
-          <view class="btn-full secondary-btn" bindtap="uploadGroupedAssetImage">上传覆盖大图</view>
-          <image
-            wx:if="{{editorForm.options.groupedAsset.imageFileId}}"
-            class="preview-image clickable-image"
-            mode="widthFix"
-            src="{{editorForm.options.groupedAsset.imageFileId}}"
-            bindtap="previewSingleImage"
-            data-src="{{editorForm.options.groupedAsset.imageFileId}}"
-          ></image>
-        </view>
-
-        <view class="grouped-key-head">
-          <view class="section-title">选项标识</view>
-          <view class="grouped-key-hint">请保持 Key 唯一，例如 A/B/C/D。</view>
-        </view>
-        <view class="grouped-key-list">
-          <view class="grouped-key-item" wx:for="{{editorForm.options.keys}}" wx:key="*this" wx:for-item="key" wx:for-index="index">
-            <input
-              class="option-key-input"
-              value="{{key}}"
-              data-index="{{index}}"
-              bindinput="onGroupedAssetKeyInput"
-              maxlength="6"
-            />
-            <button size="mini" type="warn" bindtap="removeOption" data-index="{{index}}">
-              删除
-            </button>
+          <view wx:if="{{child.optionMode === 'grouped_asset'}}">
+            <view class="grouped-asset-box">
+              <view class="grouped-asset-label">覆盖大图</view>
+              <view class="btn-full secondary-btn" bindtap="uploadGroupedAssetImage" data-scope="group-child" data-child-index="{{childIndex}}">上传覆盖大图</view>
+              <image wx:if="{{child.options.groupedAsset.imageFileId}}" class="preview-image clickable-image" mode="widthFix" src="{{child.options.groupedAsset.imageFileId}}" bindtap="previewSingleImage" data-src="{{child.options.groupedAsset.imageFileId}}"></image>
+              <view class="mini-actions"><button size="mini" type="warn" bindtap="removeGroupedAssetImage" data-scope="group-child" data-child-index="{{childIndex}}">删除图片</button></view>
+            </view>
+            <view class="grouped-key-head">
+              <view class="section-title">选项标识</view>
+              <view class="grouped-key-hint">请保持 Key 唯一，例如 A/B/C/D。</view>
+            </view>
+            <view class="grouped-key-list">
+              <view class="grouped-key-item" wx:for="{{child.options.keys}}" wx:key="*this" wx:for-item="key" wx:for-index="keyIndex">
+                <input class="option-key-input" value="{{key}}" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{keyIndex}}" bindinput="onOptionKeyInput" maxlength="6" />
+                <button size="mini" type="warn" bindtap="removeOption" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{keyIndex}}">删除</button>
+              </view>
+            </view>
+            <view class="btn-full" bindtap="addOption" data-scope="group-child" data-child-index="{{childIndex}}">新增选项标识</view>
           </view>
-        </view>
-        <view class="btn-full" bindtap="addOption">新增选项标识</view>
-      </view>
 
-      <view class="section-title">正确答案</view>
-      <checkbox-group bindchange="onCorrectOptionChange">
-        <label class="checkbox-item" wx:for="{{editorForm.options.keys}}" wx:key="*this" wx:for-item="key">
-          <checkbox
-            value="{{key}}"
-            checked="{{editorForm.correctOptionKeys.indexOf(key) !== -1}}"
-          />
-          <text>{{key}}</text>
-        </label>
-      </checkbox-group>
+          <view class="section-title">正确答案</view>
+          <checkbox-group bindchange="onCorrectOptionChange" data-scope="group-child" data-child-index="{{childIndex}}">
+            <label class="checkbox-item" wx:for="{{child.options.keys}}" wx:key="*this" wx:for-item="key">
+              <checkbox value="{{key}}" checked="{{child.correctOptionKeys.indexOf(key) !== -1}}" />
+              <text>{{key}}</text>
+            </label>
+          </checkbox-group>
+        </view>
+
+        <view class="btn-full" bindtap="addChildQuestion">新增子题</view>
+      </view>
 
       <view class="modal-actions">
         <view class="button_clear editor-action" bindtap="closeEditor">取消</view>
-        <view class="btn-full editor-action" bindtap="saveQuestion" loading="{{savingQuestion}}">
-          保存
-        </view>
+        <view class="btn-full editor-action" bindtap="saveQuestion" loading="{{savingQuestion}}">保存</view>
       </view>
     </view>
   </view>

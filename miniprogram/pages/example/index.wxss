@@ -470,6 +470,12 @@ page {
   word-break: break-all;
 }
 
+.question-mode {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: rgba(0, 0, 0, 0.45);
+}
+
 .question-actions {
   display: flex;
   gap: 12rpx;
@@ -491,6 +497,18 @@ page {
   background-color: #f6f6f6;
 }
 
+.stem-text-card,
+.option-text-card {
+  background-color: #f8fafc;
+  border-radius: 12rpx;
+  padding: 20rpx 24rpx;
+  color: rgba(0, 0, 0, 0.84);
+  font-size: 28rpx;
+  line-height: 44rpx;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .clickable-image:active {
   opacity: 0.82;
 }
@@ -499,6 +517,22 @@ page {
   display: flex;
   flex-direction: column;
   gap: 16rpx;
+}
+
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 16rpx;
+}
+
+.chip {
+  padding: 8rpx 20rpx;
+  border-radius: 999rpx;
+  background-color: rgba(26, 173, 25, 0.12);
+  color: #1a8f3d;
+  font-size: 24rpx;
+  font-weight: 500;
 }
 
 .option-card {
@@ -531,6 +565,67 @@ page {
   border-radius: 12px;
 }
 
+.segmented {
+  display: flex;
+  gap: 12rpx;
+  margin-bottom: 16rpx;
+}
+
+.segmented-small {
+  gap: 8rpx;
+  margin-bottom: 0;
+}
+
+.segmented-item {
+  flex: 1;
+  text-align: center;
+  padding: 14rpx 16rpx;
+  border-radius: 999rpx;
+  background-color: rgba(0, 0, 0, 0.05);
+  color: rgba(0, 0, 0, 0.72);
+  font-size: 26rpx;
+}
+
+.segmented-item-small {
+  padding: 10rpx 14rpx;
+  font-size: 22rpx;
+}
+
+.segmented-item-active {
+  background-color: rgba(26, 173, 25, 0.14);
+  color: #1aad19;
+  font-weight: 600;
+}
+
+.text-area {
+  width: 100%;
+  min-height: 160rpx;
+  box-sizing: border-box;
+  border: 1rpx solid rgba(0, 0, 0, 0.12);
+  border-radius: 12rpx;
+  padding: 18rpx 20rpx;
+  font-size: 28rpx;
+  line-height: 42rpx;
+  background-color: #fff;
+}
+
+.text-area-small {
+  min-height: 120rpx;
+  margin-bottom: 12rpx;
+}
+
+.secondary-btn {
+  background-color: rgba(0, 0, 0, 0.04);
+  color: #1aad19;
+}
+
+.mode-tip {
+  margin: -4rpx 0 18rpx;
+  font-size: 24rpx;
+  line-height: 38rpx;
+  color: rgba(0, 0, 0, 0.55);
+}
+
 .option-editor {
   border: 1rpx solid rgba(0, 0, 0, 0.08);
   border-radius: 12rpx;
@@ -543,6 +638,7 @@ page {
   align-items: center;
   gap: 12rpx;
   margin-bottom: 12rpx;
+  flex-wrap: wrap;
 }
 
 .option-key-input {
@@ -551,6 +647,41 @@ page {
   border: 1rpx solid rgba(0, 0, 0, 0.15);
   border-radius: 8rpx;
   padding: 0 16rpx;
+}
+
+.grouped-asset-box {
+  border: 1rpx dashed rgba(0, 0, 0, 0.14);
+  border-radius: 12rpx;
+  padding: 16rpx;
+  margin-bottom: 16rpx;
+}
+
+.grouped-asset-label {
+  font-size: 26rpx;
+  color: rgba(0, 0, 0, 0.72);
+  margin-bottom: 12rpx;
+}
+
+.grouped-key-head {
+  margin-top: 4rpx;
+}
+
+.grouped-key-hint {
+  font-size: 22rpx;
+  color: rgba(0, 0, 0, 0.5);
+  margin-bottom: 10rpx;
+}
+
+.grouped-key-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.grouped-key-item {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
 }
 
 .checkbox-item {

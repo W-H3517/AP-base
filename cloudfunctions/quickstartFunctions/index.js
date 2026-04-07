@@ -8,6 +8,11 @@ cloud.init({
 const db = cloud.database();
 const USERS_COLLECTION = "users";
 const QUESTIONS_COLLECTION = "questions";
+const QUESTION_TYPE_CHOICE = "choice";
+const CONTENT_SOURCE_TEXT = "text";
+const CONTENT_SOURCE_IMAGE = "image";
+const OPTION_MODE_PER_OPTION = "per_option";
+const OPTION_MODE_GROUPED_ASSET = "grouped_asset";
 const ADMIN_OPENIDS = (process.env.ADMIN_OPENIDS || "")
   .split(",")
   .map((item) => item.trim())
@@ -31,6 +36,8 @@ const normalizeRole = (role) => (role === "admin" ? "admin" : "user");
 
 const normalizeString = (value) =>
   typeof value === "string" ? value.trim() : "";
+
+const normalizeUpperString = (value) => normalizeString(value).toUpperCase();
 
 const ensureCollection = async (collectionName) => {
   try {
@@ -165,43 +172,12 @@ const generateQuestionId = async () => {
   throw new Error("题目ID生成失败，请重试");
 };
 
-const normalizeOptions = (options) => {
-  if (!Array.isArray(options)) {
-    throw new Error("options 必须是数组");
-  }
-
-  const cleaned = options.map((option, index) => {
-    const key = normalizeString(option?.key);
-    const imageFileId = normalizeString(option?.imageFileId);
-    if (!key) {
-      throw new Error(`第 ${index + 1} 个选项缺少 key`);
-    }
-    if (!imageFileId) {
-      throw new Error(`第 ${index + 1} 个选项缺少 imageFileId`);
-    }
-    return {
-      key,
-      imageFileId,
-    };
-  });
-
-  const keySet = new Set();
-  for (const option of cleaned) {
-    if (keySet.has(option.key)) {
-      throw new Error(`选项 key 重复：${option.key}`);
-    }
-    keySet.add(option.key);
-  }
-
-  return cleaned;
-};
-
 const normalizeCorrectOptionKeys = (correctOptionKeys) => {
   if (!Array.isArray(correctOptionKeys) || !correctOptionKeys.length) {
     throw new Error("correctOptionKeys 必须是非空数组");
   }
 
-  const cleaned = correctOptionKeys.map((key) => normalizeString(key));
+  const cleaned = correctOptionKeys.map((key) => normalizeUpperString(key));
   const keySet = new Set();
   for (const key of cleaned) {
     if (!key) {
@@ -216,20 +192,170 @@ const normalizeCorrectOptionKeys = (correctOptionKeys) => {
   return cleaned;
 };
 
+const validateSourceType = (sourceType, fieldName) => {
+  if (
+    sourceType !== CONTENT_SOURCE_TEXT &&
+    sourceType !== CONTENT_SOURCE_IMAGE
+  ) {
+    throw new Error(`${fieldName}.sourceType 仅支持 text 或 image`);
+  }
+  return sourceType;
+};
+
+const normalizeContentBlock = (content, fieldName) => {
+  const sourceType = validateSourceType(
+    normalizeString(content?.sourceType),
+    fieldName,
+  );
+  const text = normalizeString(content?.text);
+  const imageFileId = normalizeString(content?.imageFileId);
+
+  if (sourceType === CONTENT_SOURCE_TEXT) {
+    if (!text) {
+      throw new Error(`${fieldName}.text 不能为空`);
+    }
+    if (imageFileId) {
+      throw new Error(`${fieldName} 为文本时不能同时传 imageFileId`);
+    }
+  }
+
+  if (sourceType === CONTENT_SOURCE_IMAGE) {
+    if (!imageFileId) {
+      throw new Error(`${fieldName}.imageFileId 不能为空`);
+    }
+    if (text) {
+      throw new Error(`${fieldName} 为图片时不能同时传 text`);
+    }
+  }
+
+  return {
+    sourceType,
+    text: sourceType === CONTENT_SOURCE_TEXT ? text : "",
+    imageFileId: sourceType === CONTENT_SOURCE_IMAGE ? imageFileId : "",
+  };
+};
+
+const normalizeOptionKeys = (keys) => {
+  if (!Array.isArray(keys) || !keys.length) {
+    throw new Error("options.keys 必须是非空数组");
+  }
+
+  const cleaned = keys.map((key) => normalizeUpperString(key));
+  const keySet = new Set();
+
+  cleaned.forEach((key, index) => {
+    if (!key) {
+      throw new Error(`options.keys 第 ${index + 1} 项不能为空`);
+    }
+    if (keySet.has(key)) {
+      throw new Error(`options.keys 重复：${key}`);
+    }
+    keySet.add(key);
+  });
+
+  return cleaned;
+};
+
+const normalizePerOptionItems = (items) => {
+  if (!Array.isArray(items) || !items.length) {
+    throw new Error("options.items 必须是非空数组");
+  }
+
+  const keySet = new Set();
+  return items.map((item, index) => {
+    const key = normalizeUpperString(item?.key);
+    if (!key) {
+      throw new Error(`第 ${index + 1} 个选项缺少 key`);
+    }
+    if (keySet.has(key)) {
+      throw new Error(`选项 key 重复：${key}`);
+    }
+    keySet.add(key);
+    return {
+      key,
+      ...normalizeContentBlock(item, `options.items[${index}]`),
+    };
+  });
+};
+
+const validateOptionMode = (optionMode) => {
+  const normalized = normalizeString(optionMode);
+  if (
+    normalized !== OPTION_MODE_PER_OPTION &&
+    normalized !== OPTION_MODE_GROUPED_ASSET
+  ) {
+    throw new Error("optionMode 仅支持 per_option 或 grouped_asset");
+  }
+  return normalized;
+};
+
 const validateQuestionPayload = (payload, { requireQuestionId = false } = {}) => {
   const questionId = normalizeString(payload?.questionId);
-  const stemImageFileId = normalizeString(payload?.stemImageFileId);
-  const options = normalizeOptions(payload?.options);
+  const questionType = normalizeString(payload?.questionType);
+  const stem = normalizeContentBlock(payload?.stem, "stem");
+  const optionMode = validateOptionMode(payload?.optionMode);
+  const optionKeys = normalizeOptionKeys(payload?.options?.keys);
   const correctOptionKeys = normalizeCorrectOptionKeys(payload?.correctOptionKeys);
 
   if (requireQuestionId && !questionId) {
     throw new Error("questionId 不能为空");
   }
-  if (!stemImageFileId) {
-    throw new Error("stemImageFileId 不能为空");
+
+  if (questionType !== QUESTION_TYPE_CHOICE) {
+    throw new Error("questionType 仅支持 choice");
   }
 
-  const optionKeySet = new Set(options.map((item) => item.key));
+  const options = {
+    keys: optionKeys,
+    items: [],
+    groupedAsset: {
+      sourceType: CONTENT_SOURCE_IMAGE,
+      imageFileId: "",
+    },
+  };
+
+  if (optionMode === OPTION_MODE_PER_OPTION) {
+    const items = normalizePerOptionItems(payload?.options?.items);
+    const itemKeys = items.map((item) => item.key);
+    if (itemKeys.length !== optionKeys.length) {
+      throw new Error("options.keys 与 options.items 数量不一致");
+    }
+
+    for (let i = 0; i < optionKeys.length; i += 1) {
+      if (optionKeys[i] !== itemKeys[i]) {
+        throw new Error("options.keys 必须与 options.items.key 完全一致且顺序一致");
+      }
+    }
+
+    const groupedAssetImageFileId = normalizeString(
+      payload?.options?.groupedAsset?.imageFileId,
+    );
+    if (groupedAssetImageFileId) {
+      throw new Error("per_option 模式下不能传 groupedAsset.imageFileId");
+    }
+
+    options.items = items;
+  }
+
+  if (optionMode === OPTION_MODE_GROUPED_ASSET) {
+    const rawItems = payload?.options?.items;
+    if (Array.isArray(rawItems) && rawItems.length) {
+      throw new Error("grouped_asset 模式下 options.items 必须为空数组");
+    }
+
+    const groupedAsset = normalizeContentBlock(
+      {
+        sourceType: CONTENT_SOURCE_IMAGE,
+        text: "",
+        imageFileId: payload?.options?.groupedAsset?.imageFileId,
+      },
+      "options.groupedAsset",
+    );
+
+    options.groupedAsset = groupedAsset;
+  }
+
+  const optionKeySet = new Set(optionKeys);
   for (const key of correctOptionKeys) {
     if (!optionKeySet.has(key)) {
       throw new Error(`correctOptionKeys 包含不存在的选项：${key}`);
@@ -238,7 +364,9 @@ const validateQuestionPayload = (payload, { requireQuestionId = false } = {}) =>
 
   return {
     questionId,
-    stemImageFileId,
+    questionType,
+    stem,
+    optionMode,
     options,
     correctOptionKeys,
   };
@@ -269,8 +397,21 @@ const stripQuestionByRole = (question, role) => {
   const base = {
     _id: question._id,
     questionId: question.questionId,
-    stemImageFileId: question.stemImageFileId,
-    options: question.options || [],
+    questionType: question.questionType || QUESTION_TYPE_CHOICE,
+    stem: question.stem || {
+      sourceType: CONTENT_SOURCE_TEXT,
+      text: "",
+      imageFileId: "",
+    },
+    optionMode: question.optionMode || OPTION_MODE_PER_OPTION,
+    options: question.options || {
+      keys: [],
+      items: [],
+      groupedAsset: {
+        sourceType: CONTENT_SOURCE_IMAGE,
+        imageFileId: "",
+      },
+    },
     createTime: question.createTime,
     updateTime: question.updateTime,
   };
@@ -289,9 +430,9 @@ const stripQuestionByRole = (question, role) => {
 
 const sortQuestions = (questions) =>
   [...questions].sort((left, right) => {
-    const leftTime = Number(right?.createTime || 0);
-    const rightTime = Number(left?.createTime || 0);
-    return leftTime - rightTime;
+    const leftTime = Number(left?.createTime || 0);
+    const rightTime = Number(right?.createTime || 0);
+    return rightTime - leftTime;
   });
 
 const getOpenId = async () => {
@@ -351,14 +492,17 @@ const buildQuestionDocument = async (payload, user, existingQuestion = null) => 
   const mergedPayload = existingQuestion
     ? {
         questionId: existingQuestion.questionId,
-        stemImageFileId:
-          payload.stemImageFileId ?? existingQuestion.stemImageFileId,
+        questionType: payload.questionType ?? existingQuestion.questionType,
+        stem: payload.stem ?? existingQuestion.stem,
+        optionMode: payload.optionMode ?? existingQuestion.optionMode,
         options: payload.options ?? existingQuestion.options,
         correctOptionKeys:
           payload.correctOptionKeys ?? existingQuestion.correctOptionKeys,
       }
     : {
-        stemImageFileId: payload.stemImageFileId,
+        questionType: payload.questionType,
+        stem: payload.stem,
+        optionMode: payload.optionMode,
         options: payload.options,
         correctOptionKeys: payload.correctOptionKeys,
       };
@@ -386,7 +530,9 @@ const createQuestion = async (event) => {
   await db.collection(QUESTIONS_COLLECTION).add({
     data: {
       questionId,
-      stemImageFileId: validated.stemImageFileId,
+      questionType: validated.questionType,
+      stem: validated.stem,
+      optionMode: validated.optionMode,
       options: validated.options,
       correctOptionKeys: validated.correctOptionKeys,
       createTime: now,
@@ -425,7 +571,9 @@ const updateQuestion = async (event) => {
   const validated = await buildQuestionDocument(payload, user, existingQuestion);
   await db.collection(QUESTIONS_COLLECTION).doc(existingQuestion._id).update({
     data: {
-      stemImageFileId: validated.stemImageFileId,
+      questionType: validated.questionType,
+      stem: validated.stem,
+      optionMode: validated.optionMode,
       options: validated.options,
       correctOptionKeys: validated.correctOptionKeys,
       updateTime: validated.updateTime,

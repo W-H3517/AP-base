@@ -1,606 +1,729 @@
-// pages/exampleDetail/index.js
+const CLOUD_FUNCTION_NAME = "quickstartFunctions";
+const OPTION_KEY_POOL = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+
+function getCloudEnv() {
+  const app = getApp();
+  return app && app.globalData ? app.globalData.env : "";
+}
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function createDefaultOptions() {
+  return [
+    { key: "A", imageFileId: "" },
+    { key: "B", imageFileId: "" },
+  ];
+}
+
+function createEmptyEditorForm() {
+  return {
+    questionId: "",
+    stemImageFileId: "",
+    options: createDefaultOptions(),
+    correctOptionKeys: [],
+  };
+}
+
+function getNextOptionKey(options) {
+  const usedKeys = new Set(
+    (options || [])
+      .map((item) => String(item && item.key ? item.key : "").trim().toUpperCase())
+      .filter(Boolean)
+  );
+
+  for (let i = 0; i < OPTION_KEY_POOL.length; i += 1) {
+    if (!usedKeys.has(OPTION_KEY_POOL[i])) {
+      return OPTION_KEY_POOL[i];
+    }
+  }
+
+  return `OPT${Date.now()}`;
+}
+
+function getErrorMessage(error) {
+  return (error && (error.errMsg || error.message)) || "请求失败";
+}
+
+function isTimeoutError(errMsg) {
+  return String(errMsg || "").toLowerCase().includes("timeout");
+}
+
+function unwrapCloudResult(resp) {
+  const result = (resp && resp.result) || {};
+  if (result && result.success === false) {
+    throw new Error(result.errMsg || "云函数执行失败");
+  }
+  return result;
+}
+
+function normalizeUser(result) {
+  const data = result && result.data ? result.data : result;
+  return {
+    openid: data && data.openid ? data.openid : "",
+    role: data && data.role ? data.role : "user",
+    createTime: (data && data.createTime) || "",
+    updateTime: (data && data.updateTime) || "",
+  };
+}
+
+function normalizeQuestion(question, isAdmin) {
+  const normalized = {
+    _id: question && question._id ? question._id : "",
+    questionId: question && question.questionId ? question.questionId : "",
+    stemImageFileId:
+      question && question.stemImageFileId ? question.stemImageFileId : "",
+    options: Array.isArray(question && question.options) ? question.options : [],
+    correctOptionKeys: Array.isArray(question && question.correctOptionKeys)
+      ? question.correctOptionKeys
+      : [],
+  };
+
+  normalized.correctOptionText = normalized.correctOptionKeys.length
+    ? normalized.correctOptionKeys.join(", ")
+    : "暂无";
+
+  if (!isAdmin) {
+    delete normalized.correctOptionKeys;
+    delete normalized.correctOptionText;
+  }
+
+  return normalized;
+}
+
+function normalizeEditorForm(question) {
+  return {
+    questionId: question && question.questionId ? question.questionId : "",
+    stemImageFileId:
+      question && question.stemImageFileId ? question.stemImageFileId : "",
+    options:
+      Array.isArray(question && question.options) && question.options.length
+        ? question.options.map((item) => ({
+            key: String(item.key || "").trim().toUpperCase(),
+            imageFileId: item.imageFileId || "",
+          }))
+        : createDefaultOptions(),
+    correctOptionKeys:
+      Array.isArray(question && question.correctOptionKeys)
+        ? question.correctOptionKeys
+            .map((item) => String(item || "").trim().toUpperCase())
+            .filter(Boolean)
+        : [],
+  };
+}
+
+function getQuestionImageUrls(question) {
+  const urls = [];
+  const stemImageFileId =
+    question && question.stemImageFileId ? question.stemImageFileId : "";
+  const options = Array.isArray(question && question.options) ? question.options : [];
+
+  if (stemImageFileId) {
+    urls.push(stemImageFileId);
+  }
+
+  options.forEach((option) => {
+    if (option && option.imageFileId) {
+      urls.push(option.imageFileId);
+    }
+  });
+
+  return urls;
+}
+
 Page({
   data: {
-    type: "",
-    envId: "",
+    type: "questions",
+    mode: "browse",
     showTip: false,
     title: "",
     content: "",
-
-    haveGetOpenId: false,
-    openId: "",
-
-    haveGetCodeSrc: false,
-    codeSrc: "",
-
-    haveGetRecord: false,
-    record: [],
-
-    haveGetImgSrc: false,
-    imgSrc: "",
-
-    // ai
-    modelConfig: {
-      modelProvider: "deepseek", // 大模型服务厂商
-      quickResponseModel: "deepseek-v3", // 快速响应模型 （混元 turbo, gpt4 turbo版，deepseek v3等）
-      logo: "https://cloudcache.tencent-cloud.com/qcloud/ui/static/static_source_business/2339414f-2c0d-4537-9618-1812bd14f4af.svg", // model 头像
-      welcomeMsg: "我是deepseek-v3，很高兴见到你！", // model 欢迎语
+    loadingUser: false,
+    loadingQuestions: false,
+    savingQuestion: false,
+    deletingQuestionId: "",
+    userLoaded: false,
+    isAdmin: false,
+    currentUser: {
+      openid: "",
+      role: "",
     },
-    callcbrCode: "",
-    initEnvCode: "",
-    callOpenIdCode: "",
-    callMiniProgramCode: "",
-    callFunctionCode: "",
-    callCreateCollectionCode: "",
-    callUploadFileCode: "",
-
-    showInsertModal: false,
-    insertRegion: "",
-    insertCity: "",
-    insertSales: "",
-
-    haveGetCallContainerRes: false,
-    callContainerResStr: "",
-
-    ai_page_config: `{
-  "usingComponents": {
-    "agent-ui":"/components/agent-ui/index"
-  },
-}`,
-    ai_wxml_config: `&lt;agent-ui agentConfig="{{agentConfig}}" showBotAvatar="{{showBotAvatar}}" chatMode="{{chatMode}}" modelConfig="{{modelConfig}}""&gt;&lt;/agent-ui&gt;`,
-    ai_data_config: `data: {
-  chatMode: "bot", // bot 表示使用agent，model 表示使用大模型
-  showBotAvatar: true, // 是否在对话框左侧显示头像
-  agentConfig: {
-    botId: "your agent id", // agent id,
-    allowWebSearch: true, // 允许客户端选择展示联网搜索按钮
-    allowUploadFile: true, // 允许客户端展示上传文件按钮
-    allowPullRefresh: true, // 允许客户端展示下拉刷新
-    allowUploadImage: true, // 允许客户端展示上传图片按钮
-    allowMultiConversation: true, // 允许客户端展示查看会话列表/新建会话按钮
-    showToolCallDetail: true, // 是否展示 mcp server toolCall 细节
-    allowVoice: true, // 允许客户端展示语音按钮
-    showBotName: true, // 允许展示bot名称
-  },
-  modelConfig: {
-    modelProvider: "hunyuan-open", // 大模型服务厂商
-    quickResponseModel: "hunyuan-lite", // 大模型名称
-    logo: "", // model 头像
-    welcomeMsg: "欢迎语", // model 欢迎语
-  },
-}`,
-
-    // AI 场景示例数据
-    aiScenarios: [
-      {
-        title: "💡 智能代码生成与补全",
-        examples: [
-          "帮我创建一个商品列表页面,包含图片、标题、价格和加入购物车按钮",
-          "帮我完善这个函数,实现商品搜索功能",
-        ],
-      },
-      {
-        title: "🔧 代码优化与重构建议",
-        examples: [
-          "优化这段代码的性能,减少不必要的渲染",
-          "完善云函数调用的错误处理代码",
-        ],
-      },
-    ],
+    questions: [],
+    selectedQuestion: null,
+    showDetailModal: false,
+    showEditorModal: false,
+    editorMode: "create",
+    editorForm: createEmptyEditorForm(),
   },
 
   onLoad(options) {
-    if (
-      options.type === "cloudbaserunfunction" ||
-      options.type === "cloudbaserun"
-    ) {
-      this.getCallcbrCode();
-    }
-    if (options.type === "getOpenId") {
-      this.getOpenIdCode();
-    }
-    if (options.type === "getMiniProgramCode") {
-      this.getMiniProgramCode();
-    }
-
-    if (options.type === "createCollection") {
-      this.getCreateCollectionCode();
-    }
-
-    if (options.type === "uploadFile") {
-      this.getUploadFileCode();
-    }
-    this.setData({ type: options?.type, envId: options?.envId });
-  },
-
-  copyUrl() {
-    wx.setClipboardData({
-      data: "https://gitee.com/TencentCloudBase/cloudbase-agent-ui/tree/main/apps/miniprogram-agent-ui/miniprogram/components/agent-ui",
-      success: function (res) {
-        wx.showToast({
-          title: "复制成功",
-          icon: "success",
-        });
-      },
-    });
-  },
-
-  copyPluginName() {
-    wx.setClipboardData({
-      data: "微信云开发 AI ToolKit",
-      success: function (res) {
-        wx.showToast({
-          title: "复制成功",
-          icon: "success",
-        });
-      },
-    });
-  },
-
-  copyPrompt(e) {
-    const prompt = e.currentTarget.dataset.prompt;
-    wx.setClipboardData({
-      data: prompt,
-      success: function (res) {
-        wx.showToast({
-          title: "复制成功",
-          icon: "success",
-        });
-      },
-    });
-  },
-
-  insertRecord() {
     this.setData({
-      showInsertModal: true,
-      insertRegion: "",
-      insertCity: "",
-      insertSales: "",
+      type: options.type || "questions",
+      mode: options.mode || "browse",
+    });
+    this.refreshCurrentUser();
+  },
+
+  onShow() {
+    if (this.data.userLoaded) {
+      this.refreshCurrentUser(false);
+    }
+  },
+
+  showCloudTip(title, content) {
+    this.setData({
+      showTip: true,
+      title,
+      content,
     });
   },
 
-  deleteRecord(e) {
-    // 调用云函数删除记录
-    wx.showLoading({
-      title: "删除中...",
+  ensureCloudEnv() {
+    if (getCloudEnv()) {
+      return true;
+    }
+
+    this.showCloudTip(
+      "请先配置云开发环境",
+      "请先在 miniprogram/app.js 中填写 env，再使用题库功能。"
+    );
+    return false;
+  },
+
+  async callQuestionFunction(type, data) {
+    const resp = await wx.cloud.callFunction({
+      name: CLOUD_FUNCTION_NAME,
+      data: {
+        type,
+        ...(data || {}),
+      },
     });
-    wx.cloud
-      .callFunction({
-        name: "quickstartFunctions",
-        data: {
-          type: "deleteRecord",
-          data: {
-            _id: e.currentTarget.dataset.id,
-          },
-        },
-      })
-      .then((resp) => {
-        wx.showToast({
-          title: "删除成功",
-        });
-        this.getRecord(); // 刷新列表
-        wx.hideLoading();
-      })
-      .catch((e) => {
-        wx.showToast({
-          title: "删除失败",
-          icon: "none",
-        });
-        wx.hideLoading();
-      });
+    return unwrapCloudResult(resp);
   },
 
-  // 输入框事件
-  onInsertRegionInput(e) {
-    this.setData({ insertRegion: e.detail.value });
-  },
-  onInsertCityInput(e) {
-    this.setData({ insertCity: e.detail.value });
-  },
-  onInsertSalesInput(e) {
-    this.setData({ insertSales: e.detail.value });
-  },
-  // 取消弹窗
-  onInsertCancel() {
-    this.setData({ showInsertModal: false });
-  },
-
-  // 确认插入
-  async onInsertConfirm() {
-    const { insertRegion, insertCity, insertSales } = this.data;
-    if (!insertRegion || !insertCity || !insertSales) {
-      wx.showToast({ title: "请填写完整信息", icon: "none" });
+  async refreshCurrentUser(showLoading = true) {
+    if (!this.ensureCloudEnv()) {
       return;
     }
-    wx.showLoading({ title: "插入中..." });
-    try {
-      await wx.cloud.callFunction({
-        name: "quickstartFunctions",
-        data: {
-          type: "insertRecord",
-          data: {
-            region: insertRegion,
-            city: insertCity,
-            sales: Number(insertSales),
-          },
-        },
+
+    if (showLoading) {
+      wx.showLoading({
+        title: "同步中...",
       });
-      wx.showToast({ title: "插入成功" });
-      this.setData({ showInsertModal: false });
-      this.getRecord(); // 刷新列表
-    } catch (e) {
-      wx.showToast({ title: "插入失败", icon: "none" });
-      console.error(e);
+    }
+
+    this.setData({
+      loadingUser: true,
+    });
+
+    try {
+      const result = await this.callQuestionFunction("getCurrentUser");
+      const currentUser = normalizeUser(result);
+      const isAdmin = currentUser.role === "admin";
+      this.setData({
+        currentUser,
+        userLoaded: true,
+        isAdmin,
+      });
+      await this.refreshQuestions(false, isAdmin);
+    } catch (error) {
+      const errMsg = getErrorMessage(error);
+      if (isTimeoutError(errMsg)) {
+        this.showCloudTip(
+          "获取当前用户超时",
+          "云函数请求超时，请确认云函数已上传、环境配置正确，并稍后重试。"
+        );
+      } else {
+        this.showCloudTip("获取当前用户失败", errMsg);
+      }
+    } finally {
+      this.setData({
+        loadingUser: false,
+      });
+      if (showLoading) {
+        wx.hideLoading();
+      }
+    }
+  },
+
+  async refreshQuestions(showLoading = true, isAdmin = this.data.isAdmin) {
+    if (!this.ensureCloudEnv()) {
+      return;
+    }
+
+    if (showLoading) {
+      wx.showLoading({
+        title: "加载题目...",
+      });
+    }
+
+    this.setData({
+      loadingQuestions: true,
+    });
+
+    try {
+      const result = await this.callQuestionFunction("listQuestions");
+      const list = Array.isArray(result.data) ? result.data : [];
+      this.setData({
+        questions: list.map((item) => normalizeQuestion(item, isAdmin)),
+      });
+    } catch (error) {
+      const errMsg = getErrorMessage(error);
+      if (isTimeoutError(errMsg)) {
+        this.showCloudTip(
+          "加载题目超时",
+          "题目查询超时，请确认云函数与云数据库状态正常后再重试。"
+        );
+      } else {
+        this.showCloudTip("加载题目失败", errMsg);
+      }
+    } finally {
+      this.setData({
+        loadingQuestions: false,
+      });
+      if (showLoading) {
+        wx.hideLoading();
+      }
+    }
+  },
+
+  async viewQuestionDetail(e) {
+    const questionId = e.currentTarget.dataset.questionid;
+    if (!questionId || !this.ensureCloudEnv()) {
+      return;
+    }
+
+    wx.showLoading({
+      title: "加载详情...",
+    });
+
+    try {
+      const result = await this.callQuestionFunction("getQuestionDetail", {
+        questionId,
+      });
+      this.setData({
+        selectedQuestion: normalizeQuestion(result.data || {}, this.data.isAdmin),
+        showDetailModal: true,
+      });
+    } catch (error) {
+      const errMsg = getErrorMessage(error);
+      if (isTimeoutError(errMsg)) {
+        this.showCloudTip(
+          "加载题目详情超时",
+          "题目详情查询超时，请稍后重试。"
+        );
+      } else {
+        this.showCloudTip("加载题目详情失败", errMsg);
+      }
     } finally {
       wx.hideLoading();
     }
   },
 
-  getOpenId() {
-    wx.showLoading({
-      title: "",
+  closeDetailModal() {
+    this.setData({
+      showDetailModal: false,
+      selectedQuestion: null,
     });
-    wx.cloud
-      .callFunction({
-        name: "quickstartFunctions",
-        data: {
-          type: "getOpenId",
-        },
-      })
-      .then((resp) => {
-        this.setData({
-          haveGetOpenId: true,
-          openId: resp.result.openid,
-        });
-        wx.hideLoading();
-      })
-      .catch((e) => {
-        wx.hideLoading();
-        const { errCode, errMsg } = e;
-        if (errMsg.includes("Environment not found")) {
-          this.setData({
-            showTip: true,
-            title: "云开发环境未找到",
-            content:
-              "如果已经开通云开发，请检查环境ID与 `miniprogram/app.js` 中的 `env` 参数是否一致。",
-          });
-          return;
-        }
-        if (errMsg.includes("FunctionName parameter could not be found")) {
-          this.setData({
-            showTip: true,
-            title: "请上传云函数",
-            content:
-              "在'cloudfunctions/quickstartFunctions'目录右键，选择【上传并部署-云端安装依赖】，等待云函数上传完成后重试。",
-          });
-          return;
-        }
+  },
+
+  previewSingleImage(e) {
+    const current = e.currentTarget.dataset.src;
+    if (!current) {
+      return;
+    }
+
+    wx.previewImage({
+      current,
+      urls: [current],
+    });
+  },
+
+  previewQuestionImages(e) {
+    const current = e.currentTarget.dataset.src;
+    const questionId = e.currentTarget.dataset.questionid;
+    if (!current) {
+      return;
+    }
+
+    let question = null;
+    if (
+      this.data.selectedQuestion &&
+      this.data.selectedQuestion.questionId === questionId
+    ) {
+      question = this.data.selectedQuestion;
+    }
+
+    if (!question) {
+      question = (this.data.questions || []).find(
+        (item) => item.questionId === questionId
+      );
+    }
+
+    const urls = getQuestionImageUrls(question);
+    wx.previewImage({
+      current,
+      urls: urls.length ? urls : [current],
+    });
+  },
+
+  openCreateQuestion() {
+    if (!this.data.isAdmin) {
+      this.showCloudTip("权限不足", "只有管理员才能新增题目。");
+      return;
+    }
+
+    this.setData({
+      editorMode: "create",
+      editorForm: createEmptyEditorForm(),
+      showEditorModal: true,
+    });
+  },
+
+  async openEditQuestion(e) {
+    const questionId = e.currentTarget.dataset.questionid;
+    if (!questionId || !this.ensureCloudEnv()) {
+      return;
+    }
+
+    wx.showLoading({
+      title: "加载题目...",
+    });
+
+    try {
+      const result = await this.callQuestionFunction("getQuestionDetail", {
+        questionId,
       });
-  },
-
-  clearOpenId() {
-    this.setData({
-      haveGetOpenId: false,
-      openId: "",
-    });
-  },
-
-  clearCallContainerRes() {
-    this.setData({
-      haveGetCallContainerRes: false,
-      callContainerResStr: "",
-    });
-  },
-
-  getCodeSrc() {
-    wx.showLoading({
-      title: "",
-    });
-    wx.cloud
-      .callFunction({
-        name: "quickstartFunctions",
-        data: {
-          type: "getMiniProgramCode",
-        },
-      })
-      .then((resp) => {
-        this.setData({
-          haveGetCodeSrc: true,
-          codeSrc: resp.result,
-        });
-        wx.hideLoading();
-      })
-      .catch((e) => {
-        wx.hideLoading();
-        console.error(e);
-        const { errCode, errMsg } = e;
-        if (errMsg.includes("Environment not found")) {
-          this.setData({
-            showTip: true,
-            title: "云开发环境未找到",
-            content:
-              "如果已经开通云开发，请检查环境ID与 `miniprogram/app.js` 中的 `env` 参数是否一致。",
-          });
-          return;
-        }
-        if (errMsg.includes("FunctionName parameter could not be found")) {
-          this.setData({
-            showTip: true,
-            title: "请上传云函数",
-            content:
-              "在'cloudfunctions/quickstartFunctions'目录右键，选择【上传并部署-云端安装依赖】，等待云函数上传完成后重试。",
-          });
-          return;
-        }
+      this.setData({
+        editorMode: "edit",
+        editorForm: normalizeEditorForm(result.data || {}),
+        showEditorModal: true,
       });
+    } catch (error) {
+      const errMsg = getErrorMessage(error);
+      if (isTimeoutError(errMsg)) {
+        this.showCloudTip(
+          "加载题目超时",
+          "题目查询超时，请稍后重试。"
+        );
+      } else {
+        this.showCloudTip("加载题目失败", errMsg);
+      }
+    } finally {
+      wx.hideLoading();
+    }
   },
 
-  clearCodeSrc() {
+  closeEditor() {
     this.setData({
-      haveGetCodeSrc: false,
-      codeSrc: "",
+      showEditorModal: false,
+      editorMode: "create",
+      editorForm: createEmptyEditorForm(),
     });
   },
 
-  bindInput(e) {
-    const index = e.currentTarget.dataset.index;
-    const record = this.data.record;
-    record[index].sales = Number(e.detail.value);
-    this.setData({
-      record,
-    });
-  },
+  async deleteQuestion(e) {
+    const questionId = e.currentTarget.dataset.questionid;
+    if (!questionId) {
+      return;
+    }
 
-  getRecord() {
-    wx.showLoading({
-      title: "",
-    });
-    wx.cloud
-      .callFunction({
-        name: "quickstartFunctions",
-        data: {
-          type: "selectRecord",
-        },
-      })
-      .then((resp) => {
-        this.setData({
-          haveGetRecord: true,
-          record: resp.result.data,
-        });
-        wx.hideLoading();
-      })
-      .catch((e) => {
-        this.setData({
-          showTip: true,
-        });
-        wx.hideLoading();
-        console.error(e);
+    if (!this.data.isAdmin) {
+      this.showCloudTip("权限不足", "只有管理员才能删除题目。");
+      return;
+    }
+
+    const confirmed = await new Promise((resolve) => {
+      wx.showModal({
+        title: "确认删除",
+        content: `确定删除题目 ${questionId} 吗？`,
+        success: (res) => resolve(!!res.confirm),
+        fail: () => resolve(false),
       });
-  },
+    });
 
-  clearRecord() {
+    if (!confirmed || !this.ensureCloudEnv()) {
+      return;
+    }
+
+    wx.showLoading({
+      title: "删除中...",
+    });
     this.setData({
-      haveGetRecord: false,
-      record: [],
+      deletingQuestionId: questionId,
     });
-  },
-  updateRecord() {
-    wx.showLoading({
-      title: "",
-    });
-    wx.cloud
-      .callFunction({
-        name: "quickstartFunctions",
-        data: {
-          type: "updateRecord",
-          data: this.data.record,
-        },
-      })
-      .then((resp) => {
-        wx.showToast({
-          title: "更新成功",
-        });
-        wx.hideLoading();
-      })
-      .catch((e) => {
-        console.log(e);
-        this.setData({
-          showUploadTip: true,
-        });
-        wx.hideLoading();
+
+    try {
+      await this.callQuestionFunction("deleteQuestion", {
+        questionId,
       });
+      wx.hideLoading();
+      wx.showToast({
+        title: "删除成功",
+        icon: "success",
+      });
+      await this.refreshQuestions(false);
+    } catch (error) {
+      const errMsg = getErrorMessage(error);
+      if (isTimeoutError(errMsg)) {
+        this.showCloudTip(
+          "删除题目超时",
+          "删除请求超时，请确认云函数状态正常后重试。"
+        );
+      } else {
+        this.showCloudTip("删除题目失败", errMsg);
+      }
+    } finally {
+      this.setData({
+        deletingQuestionId: "",
+      });
+    }
   },
 
-  uploadImg() {
-    wx.showLoading({
-      title: "",
+  addOption() {
+    const editorForm = clone(this.data.editorForm);
+    editorForm.options.push({
+      key: getNextOptionKey(editorForm.options),
+      imageFileId: "",
     });
-    // 让用户选择一张图片
-    wx.chooseMedia({
-      count: 1,
-      success: (chooseResult) => {
-        // 将图片上传至云存储空间
-        wx.cloud
-          .uploadFile({
-            // 指定上传到的云路径
-            cloudPath: `my-photo-${new Date().getTime()}.png`,
-            // 指定要上传的文件的小程序临时文件路径
-            filePath: chooseResult.tempFiles[0].tempFilePath,
-          })
-          .then((res) => {
-            this.setData({
-              haveGetImgSrc: true,
-              imgSrc: res.fileID,
+    this.setData({
+      editorForm,
+    });
+  },
+
+  removeOption(e) {
+    const index = Number(e.currentTarget.dataset.index);
+    const editorForm = clone(this.data.editorForm);
+    if (editorForm.options.length <= 2) {
+      this.showCloudTip("选项数量不足", "题目至少保留两个选项。");
+      return;
+    }
+
+    const removed = editorForm.options[index];
+    editorForm.options.splice(index, 1);
+    editorForm.correctOptionKeys = editorForm.correctOptionKeys.filter(
+      (item) => item !== removed.key
+    );
+    this.setData({
+      editorForm,
+    });
+  },
+
+  onEditorOptionKeyInput(e) {
+    const index = Number(e.currentTarget.dataset.index);
+    const value = String(e.detail.value || "").trim().toUpperCase();
+    const editorForm = clone(this.data.editorForm);
+    const oldKey = editorForm.options[index].key;
+    editorForm.options[index].key = value;
+    editorForm.correctOptionKeys = editorForm.correctOptionKeys.map((item) =>
+      item === oldKey ? value : item
+    );
+    this.setData({
+      editorForm,
+    });
+  },
+
+  onCorrectOptionChange(e) {
+    const editorForm = clone(this.data.editorForm);
+    editorForm.correctOptionKeys = (e.detail.value || [])
+      .map((item) => String(item).trim().toUpperCase())
+      .filter(Boolean);
+    this.setData({
+      editorForm,
+    });
+  },
+
+  async uploadImageToCloud(prefix) {
+    return new Promise((resolve, reject) => {
+      wx.chooseMedia({
+        count: 1,
+        mediaType: ["image"],
+        sourceType: ["album", "camera"],
+        success: async (chooseResult) => {
+          try {
+            const filePath = chooseResult.tempFiles[0].tempFilePath;
+            const cloudPath = `${prefix}-${Date.now()}.png`;
+            const uploadResult = await wx.cloud.uploadFile({
+              cloudPath,
+              filePath,
             });
-          })
-          .catch((e) => {
-            console.log("e", e);
-          });
-      },
-      complete: () => {
-        wx.hideLoading();
-      },
+            resolve(uploadResult.fileID);
+          } catch (error) {
+            reject(error);
+          }
+        },
+        fail: reject,
+      });
     });
   },
 
-  clearImgSrc() {
-    this.setData({
-      haveGetImgSrc: false,
-      imgSrc: "",
+  async uploadStemImage() {
+    if (!this.ensureCloudEnv()) {
+      return;
+    }
+
+    wx.showLoading({
+      title: "上传中...",
     });
+
+    try {
+      const fileID = await this.uploadImageToCloud("question-stem");
+      const editorForm = clone(this.data.editorForm);
+      editorForm.stemImageFileId = fileID;
+      this.setData({
+        editorForm,
+      });
+    } catch (error) {
+      this.showCloudTip("上传题干图片失败", getErrorMessage(error));
+    } finally {
+      wx.hideLoading();
+    }
   },
 
-  goOfficialWebsite() {
-    const url = "https://docs.cloudbase.net/toolbox/quick-start";
-    wx.navigateTo({
-      url: `../web/index?url=${url}`,
+  async uploadOptionImage(e) {
+    const index = Number(e.currentTarget.dataset.index);
+    if (!this.ensureCloudEnv()) {
+      return;
+    }
+
+    wx.showLoading({
+      title: "上传中...",
     });
+
+    try {
+      const fileID = await this.uploadImageToCloud("question-option");
+      const editorForm = clone(this.data.editorForm);
+      editorForm.options[index].imageFileId = fileID;
+      this.setData({
+        editorForm,
+      });
+    } catch (error) {
+      this.showCloudTip("上传选项图片失败", getErrorMessage(error));
+    } finally {
+      wx.hideLoading();
+    }
   },
-  runCallContainer: async function () {
-    const app = getApp();
-    console.log("globalData", app.globalData);
-    const c1 = new wx.cloud.Cloud({
-      resourceEnv: app.globalData.env,
-    });
-    await c1.init();
-    const r = await c1.callContainer({
-      path: "/api/users", // 填入业务自定义路径
-      header: {
-        "X-WX-SERVICE": "express-test", // 填入服务名称
+
+  validateEditorForm() {
+    const editorForm = this.data.editorForm;
+    const stemImageFileId = String(editorForm.stemImageFileId || "").trim();
+    const options = Array.isArray(editorForm.options) ? editorForm.options : [];
+    const correctOptionKeys = Array.isArray(editorForm.correctOptionKeys)
+      ? editorForm.correctOptionKeys
+          .map((item) => String(item).trim().toUpperCase())
+          .filter(Boolean)
+      : [];
+
+    if (!stemImageFileId) {
+      return { valid: false, message: "请先上传题干图片。" };
+    }
+
+    if (options.length < 2) {
+      return { valid: false, message: "题目至少需要两个选项。" };
+    }
+
+    const normalizedOptions = [];
+    const seenKeys = new Set();
+
+    for (let i = 0; i < options.length; i += 1) {
+      const option = options[i] || {};
+      const key = String(option.key || "").trim().toUpperCase();
+      const imageFileId = String(option.imageFileId || "").trim();
+
+      if (!key) {
+        return { valid: false, message: "请补全所有选项标识。" };
+      }
+
+      if (seenKeys.has(key)) {
+        return { valid: false, message: "选项标识不能重复。" };
+      }
+      seenKeys.add(key);
+
+      if (!imageFileId) {
+        return { valid: false, message: `请上传选项 ${key} 的图片。` };
+      }
+
+      normalizedOptions.push({
+        key,
+        imageFileId,
+      });
+    }
+
+    if (!correctOptionKeys.length) {
+      return { valid: false, message: "请至少选择一个正确答案。" };
+    }
+
+    for (let i = 0; i < correctOptionKeys.length; i += 1) {
+      if (!seenKeys.has(correctOptionKeys[i])) {
+        return { valid: false, message: "正确答案必须来自当前选项。" };
+      }
+    }
+
+    return {
+      valid: true,
+      data: {
+        stemImageFileId,
+        options: normalizedOptions,
+        correctOptionKeys: Array.from(new Set(correctOptionKeys)),
       },
-      // 其余参数同 wx.request
-      method: "GET",
-    });
-    console.log(r);
-    this.setData({
-      haveGetCallContainerRes: true,
-      callContainerResStr: `${JSON.stringify(r.data.items, null, 2)}`,
-    });
-  },
-  getCallcbrCode: function () {
-    const app = getApp();
-    this.setData({
-      callcbrCode: `const c1 = new wx.cloud.Cloud({
-  resourceEnv: ${app.globalData.env}
-})
-await c1.init()
-const r = await c1.callContainer({
-  path: '/api/users', // 此处填入业务自定义路径， /api/users 为示例路径
-  header: {
-    'X-WX-SERVICE': 'express-test', // 填入业务服务名称，express-test 为示例服务
-  },
-  // 其余参数同 wx.request
-  method: 'GET',
-})`,
-    });
-  },
-  getInitEnvCode: function () {
-    const app = getApp();
-    this.setData({
-      initEnvCode: `wx.cloud.init({
-  env: ${app.globalData.env},
-  traceUser: true,
-});`,
-    });
-  },
-  getCreateCollectionCode: function () {
-    this.setData({
-      callCreateCollectionCode: `const cloud = require('wx-server-sdk');
-cloud.init({
-  env: cloud.DYNAMIC_CURRENT_ENV
-});
-const db = cloud.database();
-// 创建集合云函数入口函数
-exports.main = async (event, context) => {
-  try {
-    // 创建集合
-    await db.createCollection('sales');
-    return {
-      success: true
     };
-  } catch (e) {
-    return {
-      success: true,
-      data: 'create collection success'
-    };
-  }
-};`,
-    });
   },
-  getOpenIdCode: function () {
+
+  async saveQuestion() {
+    if (!this.data.isAdmin) {
+      this.showCloudTip("权限不足", "只有管理员才能保存题目。");
+      return;
+    }
+
+    const validation = this.validateEditorForm();
+    if (!validation.valid) {
+      this.showCloudTip("请先完善题目", validation.message);
+      return;
+    }
+
+    if (!this.ensureCloudEnv()) {
+      return;
+    }
+
+    const data = clone(validation.data);
+    if (this.data.editorMode === "edit") {
+      data.questionId = this.data.editorForm.questionId;
+    }
+
+    wx.showLoading({
+      title: "保存中...",
+    });
     this.setData({
-      callOpenIdCode: `const cloud = require('wx-server-sdk');
-cloud.init({
-  env: cloud.DYNAMIC_CURRENT_ENV
-});
-// 获取openId云函数入口函数
-exports.main = async (event, context) => {
-  // 获取基础信息
-  const wxContext = cloud.getWXContext();
-  return {
-    openid: wxContext.OPENID,
-    appid: wxContext.APPID,
-    unionid: wxContext.UNIONID,
-  };
-};`,
-      callFunctionCode: `wx.cloud.callFunction({
-  name: 'quickstartFunctions',
-  data: {
-    type: 'getOpenId'
-  }
-}).then((resp) => console.log(resp))`,
+      savingQuestion: true,
     });
-  },
-  getMiniProgramCode: function () {
-    this.setData({
-      callMiniProgramCode: `const cloud = require('wx-server-sdk');
-cloud.init({
-  env: cloud.DYNAMIC_CURRENT_ENV
-});
-// 获取小程序二维码云函数入口函数
-exports.main = async (event, context) => {
-  // 获取小程序二维码的buffer
-  const resp = await cloud.openapi.wxacode.get({
-    path: 'pages/index/index'
-  });
-  const { buffer } = resp;
-  // 将图片上传云存储空间
-  const upload = await cloud.uploadFile({
-    cloudPath: 'code.png',
-    fileContent: buffer
-  });
-  return upload.fileID;
-};
-`,
-      callFunctionCode: `wx.cloud.callFunction({
-  name: 'quickstartFunctions',
-  data: {
-    type: 'getMiniProgramCode'
-  }
-}).then((resp) => console.log(resp))`,
-    });
-  },
-  getUploadFileCode: function () {
-    this.setData({
-      callUploadFileCode: `wx.chooseMedia({
-count: 1,
-success: (chooseResult) => {
-  // 将图片上传至云存储空间
-  wx.cloud
-    .uploadFile({
-      // 指定上传到的云路径
-      cloudPath: "my-photo.png",
-      // 指定要上传的文件的小程序临时文件路径
-      filePath: chooseResult.tempFiles[0].tempFilePath,
-    })
-    .then((res) => {
-      console.log(res)
-    })
-    .catch((e) => {
-      console.log('e', e)
-    });
-}
-});`,
-    });
+
+    try {
+      await this.callQuestionFunction(
+        this.data.editorMode === "edit" ? "updateQuestion" : "createQuestion",
+        data
+      );
+      wx.hideLoading();
+      wx.showToast({
+        title: "保存成功",
+        icon: "success",
+      });
+      this.closeEditor();
+      await this.refreshQuestions(false);
+    } catch (error) {
+      const errMsg = getErrorMessage(error);
+      if (isTimeoutError(errMsg)) {
+        this.showCloudTip(
+          "保存题目超时",
+          "保存请求超时，请确认云函数与云数据库状态正常后重试。"
+        );
+      } else {
+        this.showCloudTip("保存题目失败", errMsg);
+      }
+    } finally {
+      this.setData({
+        savingQuestion: false,
+      });
+    }
   },
 });

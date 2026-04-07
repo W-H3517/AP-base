@@ -140,3 +140,61 @@ page {
   font-size: 24rpx;
   margin-top: 25%;
 }
+
+.code_box {
+  width: 90%;
+  margin: 0 auto 24rpx;
+  background-color: #fff;
+  border-radius: 12rpx;
+  padding: 24rpx;
+  box-sizing: border-box;
+}
+
+.code_box_title {
+  font-size: 30rpx;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.85);
+  margin-bottom: 16rpx;
+}
+
+.code_box_record {
+  display: flex;
+  align-items: center;
+}
+
+.code_box_record_title {
+  font-size: 24rpx;
+  color: rgba(0, 0, 0, 0.55);
+  padding: 16rpx 0;
+}
+
+.code_box_record_detail {
+  font-size: 24rpx;
+  color: rgba(0, 0, 0, 0.85);
+  padding: 16rpx 0;
+  word-break: break-all;
+}
+
+.btn-full {
+  width: 90%;
+  margin: 0 auto 16rpx;
+  height: 80rpx;
+  line-height: 80rpx;
+  text-align: center;
+  color: #fff;
+  background-color: #1aad19;
+  border-radius: 10rpx;
+}
+
+.button_clear {
+  width: 90%;
+  margin: 0 auto 16rpx;
+  min-height: 80rpx;
+  line-height: 40rpx;
+  text-align: center;
+  color: #1aad19;
+  background-color: rgba(26, 173, 25, 0.08);
+  border-radius: 10rpx;
+  padding: 20rpx;
+  box-sizing: border-box;
+}

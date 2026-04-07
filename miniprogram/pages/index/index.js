@@ -1,185 +1,267 @@
-// index.js
+const CLOUD_FUNCTION_NAME = "quickstartFunctions";
+
+function getCloudEnv() {
+  const app = getApp();
+  return app && app.globalData ? app.globalData.env : "";
+}
+
+function getErrorMessage(err) {
+  return (err && (err.errMsg || err.message)) || "";
+}
+
+function unwrapCloudResult(resp) {
+  const payload = resp && Object.prototype.hasOwnProperty.call(resp, "result") ? resp.result : resp;
+  if (payload && payload.success === false) {
+    const error = new Error(payload.errMsg || "云函数调用失败");
+    error.raw = payload;
+    throw error;
+  }
+  return payload;
+}
+
+function isTimeoutError(errMsg) {
+  return String(errMsg || "").toLowerCase().includes("timeout");
+}
+
 Page({
   data: {
     showTip: false,
-    powerList: [
-      {
-        title: "云托管",
-        tip: "不限语言的全托管容器服务",
-        showItem: false,
-        item: [
-          {
-            type: "cloudbaserun",
-            title: "云托管调用",
-          },
-        ],
-      },
-      {
-        title: "云函数",
-        tip: "安全、免鉴权运行业务代码",
-        showItem: false,
-        item: [
-          {
-            type: "getOpenId",
-            title: "获取OpenId",
-          },
-          {
-            type: "getMiniProgramCode",
-            title: "生成小程序码",
-          },
-        ],
-      },
-      {
-        title: "数据库",
-        tip: "安全稳定的文档型数据库",
-        showItem: false,
-        item: [
-          {
-            type: "createCollection",
-            title: "创建集合",
-          },
-          {
-            type: "selectRecord",
-            title: "增删改查记录",
-          },
-          // {
-          //   title: '聚合操作',
-          //   page: 'sumRecord',
-          // },
-        ],
-      },
-      {
-        title: "云存储",
-        tip: "自带CDN加速文件存储",
-        showItem: false,
-        item: [
-          {
-            type: "uploadFile",
-            title: "上传文件",
-          },
-        ],
-      },
-      {
-        title: "AI 接入能力",
-        tip: "云开发 AI 接入能力",
-        showItem: false,
-        item: [
-          {
-            type: "model-guide",
-            title: "大模型对话指引",
-          },
-        ],
-      },
-      {
-        title: "AI 智能开发小程序",
-        tip: "连接 AI 开发工具与 MCP 开发小程序",
-        type: "ai-assistant",
-        skipEnvCheck: true,
-        showItem: false,
-        item: [],
-      },
-    ],
-    haveCreateCollection: false,
     title: "",
     content: "",
+    loadingUser: false,
+    loadingAction: false,
+    userLoaded: false,
+    isAdmin: false,
+    currentUser: {
+      openid: "",
+      role: "",
+    },
+    entranceList: [
+      {
+        title: "题库入口",
+        tip: "先同步当前用户，再进入题目浏览或管理员管理页",
+        showItem: true,
+        item: [
+          {
+            type: "getCurrentUser",
+            title: "刷新当前用户",
+          },
+          {
+            type: "initCollections",
+            title: "初始化集合",
+          },
+          {
+            type: "question-browser",
+            title: "题目浏览",
+          },
+          {
+            type: "question-admin",
+            title: "题目管理",
+            adminOnly: true,
+          },
+        ],
+      },
+    ],
   },
-  onClickPowerInfo(e) {
-    const app = getApp();
+
+  onLoad() {
+    this.getCurrentUser();
+  },
+
+  onShow() {
+    if (this.data.userLoaded) {
+      this.getCurrentUser(false);
+    }
+  },
+
+  showCloudTip(title, content) {
+    this.setData({
+      showTip: true,
+      title,
+      content,
+    });
+  },
+
+  hideGroup(e) {
     const index = e.currentTarget.dataset.index;
-    const powerList = this.data.powerList;
-    const selectedItem = powerList[index];
-    
-    // 检查是否跳过环境配置检测
-    if (!selectedItem.skipEnvCheck && !app.globalData.env) {
-      wx.showModal({
-        title: "提示",
-        content: "请在 `miniprogram/app.js` 中正确配置 `env` 参数",
-      });
+    const entranceList = this.data.entranceList.slice();
+    const selectedItem = entranceList[index];
+    selectedItem.showItem = !selectedItem.showItem;
+    this.setData({
+      entranceList,
+    });
+  },
+
+  async getCurrentUser(showLoading = true) {
+    const env = getCloudEnv();
+    if (!env) {
+      this.showCloudTip(
+        "请先配置云开发环境",
+        "请在 miniprogram/app.js 中填入 env 后，再使用题库相关功能。"
+      );
       return;
     }
-    if (selectedItem.link) {
-      wx.navigateTo({
-        url: `../web/index?url=${selectedItem.link}&title=${selectedItem.title}`,
-      });
-    } else if (selectedItem.type) {
-      wx.navigateTo({
-        url: `/pages/example/index?envId=${this.data.selectedEnv?.envId}&type=${selectedItem.type}`,
-      });
-    } else if (selectedItem.page) {
-      wx.navigateTo({
-        url: `/pages/${selectedItem.page}/index`,
-      });
-    } else if (
-      selectedItem.title === "数据库" &&
-      !this.data.haveCreateCollection
-    ) {
-      this.onClickDatabase(powerList, selectedItem);
-    } else {
-      selectedItem.showItem = !selectedItem.showItem;
-      this.setData({
-        powerList,
+
+    if (showLoading) {
+      wx.showLoading({
+        title: "同步中...",
       });
     }
+
+    this.setData({
+      loadingUser: true,
+    });
+
+    try {
+      const resp = await wx.cloud.callFunction({
+        name: CLOUD_FUNCTION_NAME,
+        data: {
+          type: "getCurrentUser",
+        },
+      });
+
+      const payload = unwrapCloudResult(resp) || {};
+      const user =
+        payload && payload.data && typeof payload.data === "object" && !Array.isArray(payload.data)
+          ? payload.data
+          : payload;
+      const currentUser = {
+        openid: user.openid || "",
+        role: user.role || "user",
+        createTime: user.createTime || "",
+        updateTime: user.updateTime || "",
+      };
+
+      this.setData({
+        currentUser,
+        userLoaded: true,
+        isAdmin: currentUser.role === "admin",
+      });
+    } catch (err) {
+      const errMsg = getErrorMessage(err);
+      if (isTimeoutError(errMsg)) {
+        this.showCloudTip(
+          "获取当前用户超时",
+          "云函数请求超时，请确认云函数已上传、环境配置正确，并稍后重试。"
+        );
+      } else if (errMsg.includes("Environment not found")) {
+        this.showCloudTip(
+          "云开发环境未找到",
+          "如果已经开通云开发，请检查 miniprogram/app.js 里的 env 是否正确。"
+        );
+      } else if (errMsg.includes("FunctionName parameter could not be found")) {
+        this.showCloudTip(
+          "请先上传云函数",
+          "请先上传并部署 cloudfunctions/quickstartFunctions，再返回重试。"
+        );
+      } else {
+        this.showCloudTip("获取当前用户失败", errMsg || "请稍后重试。");
+      }
+    } finally {
+      this.setData({
+        loadingUser: false,
+      });
+      if (showLoading) {
+        wx.hideLoading();
+      }
+    }
+  },
+
+  async initCollections() {
+    const env = getCloudEnv();
+    if (!env) {
+      this.showCloudTip(
+        "请先配置云开发环境",
+        "请在 miniprogram/app.js 中填入 env 后，再初始化集合。"
+      );
+      return;
+    }
+
+    wx.showLoading({
+      title: "初始化中...",
+    });
+
+    this.setData({
+      loadingAction: true,
+    });
+
+    try {
+      const resp = await wx.cloud.callFunction({
+        name: CLOUD_FUNCTION_NAME,
+        data: {
+          type: "initCollections",
+        },
+      });
+      const result = unwrapCloudResult(resp) || {};
+      wx.hideLoading();
+      if (result.success) {
+        wx.showToast({
+          title: "初始化完成",
+          icon: "success",
+        });
+      } else {
+        this.showCloudTip("初始化未完成", result.errMsg || "请检查云函数返回结果。");
+      }
+    } catch (err) {
+      const errMsg = getErrorMessage(err);
+      if (isTimeoutError(errMsg)) {
+        this.showCloudTip(
+          "初始化集合超时",
+          "云函数请求超时，请确认云函数已上传部署，且当前云环境可正常访问。"
+        );
+      } else if (errMsg.includes("Environment not found")) {
+        this.showCloudTip(
+          "云开发环境未找到",
+          "如果已经开通云开发，请检查 miniprogram/app.js 里的 env 是否正确。"
+        );
+      } else if (errMsg.includes("FunctionName parameter could not be found")) {
+        this.showCloudTip(
+          "请先上传云函数",
+          "请先上传并部署 cloudfunctions/quickstartFunctions，再返回重试。"
+        );
+      } else {
+        this.showCloudTip("初始化集合失败", errMsg || "请稍后重试。");
+      }
+    } finally {
+      this.setData({
+        loadingAction: false,
+      });
+    }
+  },
+
+  openQuestionBrowser() {
+    wx.navigateTo({
+      url: "/pages/example/index?type=questions",
+    });
+  },
+
+  openQuestionAdmin() {
+    if (!this.data.isAdmin) {
+      this.showCloudTip("权限不足", "当前用户是普通用户，只能浏览题目，不能进入管理员管理页。");
+      return;
+    }
+
+    wx.navigateTo({
+      url: "/pages/example/index?type=questions&mode=admin",
+    });
   },
 
   jumpPage(e) {
-    const { type, page } = e.currentTarget.dataset;
-    console.log("jump page", type, page);
-    if (type) {
-      wx.navigateTo({
-        url: `/pages/example/index?envId=${this.data.selectedEnv?.envId}&type=${type}`,
-      });
-    } else {
-      wx.navigateTo({
-        url: `/pages/${page}/index?envId=${this.data.selectedEnv?.envId}`,
-      });
+    const type = e.currentTarget.dataset.type;
+    if (type === "getCurrentUser") {
+      this.getCurrentUser();
+      return;
     }
-  },
-
-  onClickDatabase(powerList, selectedItem) {
-    wx.showLoading({
-      title: "",
-    });
-    wx.cloud
-      .callFunction({
-        name: "quickstartFunctions",
-        data: {
-          type: "createCollection",
-        },
-      })
-      .then((resp) => {
-        if (resp.result.success) {
-          this.setData({
-            haveCreateCollection: true,
-          });
-        }
-        selectedItem.showItem = !selectedItem.showItem;
-        this.setData({
-          powerList,
-        });
-        wx.hideLoading();
-      })
-      .catch((e) => {
-        wx.hideLoading();
-        const { errCode, errMsg } = e;
-        if (errMsg.includes("Environment not found")) {
-          this.setData({
-            showTip: true,
-            title: "云开发环境未找到",
-            content:
-              "如果已经开通云开发，请检查环境ID与 `miniprogram/app.js` 中的 `env` 参数是否一致。",
-          });
-          return;
-        }
-        if (errMsg.includes("FunctionName parameter could not be found")) {
-          this.setData({
-            showTip: true,
-            title: "请上传云函数",
-            content:
-              "在'cloudfunctions/quickstartFunctions'目录右键，选择【上传并部署-云端安装依赖】，等待云函数上传完成后重试。",
-          });
-          return;
-        }
-      });
+    if (type === "initCollections") {
+      this.initCollections();
+      return;
+    }
+    if (type === "question-browser") {
+      this.openQuestionBrowser();
+      return;
+    }
+    if (type === "question-admin") {
+      this.openQuestionAdmin();
+    }
   },
 });

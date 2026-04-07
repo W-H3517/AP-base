@@ -1,29 +1,75 @@
-<!--index.wxml-->
 <view class="container">
-  <view class="title">快速了解云开发</view>
-  <view class="top_tip">免鉴权接口调用 免部署后台 高并发</view>
-  <view class="power" wx:key="title" wx:for="{{powerList}}" wx:for-item="power">
-    <view class="power_info" data-index="{{index}}" data-type="{{ power.type }}" bindtap="onClickPowerInfo">
-      <view class="power_info_text">
-        <view class="power_info_text_title">
-          {{power.title}}
-          <view class="power_info_text_tag" wx:if="{{power.tag}}">{{power.tag}}</view>
-        </view>
-        <view class="power_info_text_tip">{{power.tip}}</view>
-      </view>
-      <image wx:if="{{!power.showItem && power.item.length}}" class="power_info_more" src="../../images/arrow.svg"></image>
-      <image wx:if="{{power.showItem && power.item.length}}" class="power_info_less" src="../../images/arrow.svg"></image>
-      <image wx:if="{{!power.item.length}}" class="power_item_icon" src="../../images/arrow.svg"></image>
+  <view class="title">题库与权限</view>
+  <view class="top_tip">
+    页面会先同步当前用户身份。普通用户只浏览题目，管理员会看到题目管理入口。
+  </view>
+
+  <view class="code_box">
+    <view class="code_box_title">当前用户</view>
+    <view class="code_box_record">
+      <view class="code_box_record_title" style="width: 30%;">身份</view>
+      <view class="code_box_record_title" style="width: 30%;">状态</view>
+      <view class="code_box_record_title" style="width: 40%;">操作</view>
     </view>
-    <view wx:if="{{power.showItem}}">
-      <view wx:key="title" wx:for="{{power.item}}">
-        <view class="line"></view>
-        <view class="power_item" bindtap="jumpPage" data-type="{{ item.type }}" data-page="{{item.page}}">
-          <view class="power_item_title">{{item.title}}</view>
-          <image class="power_item_icon" src="../../images/arrow.svg"></image>
+    <view class="line"></view>
+    <view class="code_box_record">
+      <view class="code_box_record_detail" style="width: 30%;">
+        {{currentUser.role ? currentUser.role : '加载中'}}
+      </view>
+      <view class="code_box_record_detail" style="width: 30%;">
+        {{userLoaded ? '已同步' : '未同步'}}
+      </view>
+      <view class="code_box_record_detail" style="width: 40%;">
+        <button style="font-size: 12px" bindtap="getCurrentUser" loading="{{loadingUser}}">刷新</button>
+      </view>
+    </view>
+    <view class="top_tip" style="word-break: break-all;">
+      OpenID：{{currentUser.openid ? currentUser.openid : '待获取'}}
+    </view>
+  </view>
+
+  <view class="btn-full" bindtap="initCollections" loading="{{loadingAction}}">
+    初始化集合
+  </view>
+  <view class="btn-full" bindtap="openQuestionBrowser">
+    题目浏览
+  </view>
+  <view class="btn-full" wx:if="{{isAdmin}}" bindtap="openQuestionAdmin">
+    题目管理
+  </view>
+  <view class="button_clear" wx:if="{{userLoaded && !isAdmin}}">
+    当前身份为普通用户，只开放题目浏览入口
+  </view>
+
+  <view class="power">
+    <view class="power_info" data-index="0" bindtap="hideGroup">
+      <view class="power_info_text">
+        <view class="power_info_text_title">题库入口</view>
+        <view class="power_info_text_tip">包含用户同步、集合初始化和题目入口</view>
+      </view>
+      <image
+        wx:if="{{!entranceList[0].showItem}}"
+        class="power_info_more"
+        src="../../images/arrow.svg"
+      ></image>
+      <image
+        wx:if="{{entranceList[0].showItem}}"
+        class="power_info_less"
+        src="../../images/arrow.svg"
+      ></image>
+    </view>
+    <view wx:if="{{entranceList[0].showItem}}">
+      <view wx:key="title" wx:for="{{entranceList[0].item}}" wx:for-item="item">
+        <view wx:if="{{!item.adminOnly || isAdmin}}">
+          <view class="line"></view>
+          <view class="power_item" bindtap="jumpPage" data-type="{{item.type}}">
+            <view class="power_item_title">{{item.title}}</view>
+            <image class="power_item_icon" src="../../images/arrow.svg"></image>
+          </view>
         </view>
       </view>
     </view>
   </view>
+
   <cloud-tip-modal showTipProps="{{showTip}}" title="{{title}}" content="{{content}}"></cloud-tip-modal>
 </view>

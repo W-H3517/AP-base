@@ -231,7 +231,7 @@ Page({
 
   openQuestionBrowser() {
     wx.navigateTo({
-      url: "/pages/example/index?type=questions",
+      url: "/pages/question-bank/index?type=questions",
     });
   },
 
@@ -242,7 +242,7 @@ Page({
     }
 
     wx.navigateTo({
-      url: "/pages/example/index?type=questions&mode=admin",
+      url: "/pages/question-bank/index?type=questions&mode=admin",
     });
   },
 

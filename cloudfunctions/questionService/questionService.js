@@ -449,7 +449,7 @@ const encodeCursor = (offset) =>
 const normalizeListLimit = (limit) => {
   const parsed = Number(limit);
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    return 20;
+    return 10;
   }
   return Math.min(Math.floor(parsed), 100);
 };
@@ -1016,6 +1016,84 @@ const buildQuestionSummaryEntities = (questions) => {
     .map((item) => item.data);
 };
 
+const buildQuestionSummaryPaginationUnits = (questions) => {
+  const groupedMap = new Map();
+  const units = [];
+
+  sortQuestions(questions || []).forEach((question) => {
+    const entryMode = question?.entryMode || ENTRY_MODE_SINGLE;
+    if (entryMode === ENTRY_MODE_GROUPED && normalizeString(question?.groupId)) {
+      const groupId = normalizeString(question.groupId);
+      if (!groupedMap.has(groupId)) {
+        groupedMap.set(groupId, []);
+      }
+      groupedMap.get(groupId).push(question);
+      return;
+    }
+
+    units.push({
+      sortCreateTime: Number(question?.createTime || 0),
+      sortGroupOrder: Number(question?.groupOrder || 0),
+      questionCount: 1,
+      data: buildSingleQuestionSummary(question),
+    });
+  });
+
+  groupedMap.forEach((groupQuestions) => {
+    const summary = buildGroupSummary(groupQuestions);
+    units.push({
+      sortCreateTime: Number(summary.createTime || 0),
+      sortGroupOrder: 0,
+      questionCount: Number(summary.childCount || 0),
+      data: summary,
+    });
+  });
+
+  return units.sort((left, right) => {
+    if (left.sortCreateTime !== right.sortCreateTime) {
+      return right.sortCreateTime - left.sortCreateTime;
+    }
+    return left.sortGroupOrder - right.sortGroupOrder;
+  });
+};
+
+const countQuestionSummaryUnits = (units) =>
+  (units || []).reduce((total, unit) => total + Number(unit?.questionCount || 0), 0);
+
+const paginateQuestionSummaryUnits = (units, offset, limit) => {
+  const normalizedUnits = Array.isArray(units) ? units : [];
+  const normalizedOffset = Math.max(0, Number(offset || 0));
+  const normalizedLimit = normalizeListLimit(limit);
+  const pageUnits = [];
+  let pageQuestionCount = 0;
+  let cursor = normalizedOffset;
+
+  while (cursor < normalizedUnits.length) {
+    const unit = normalizedUnits[cursor];
+    const unitQuestionCount = Math.max(1, Number(unit?.questionCount || 0));
+    if (
+      pageUnits.length > 0 &&
+      pageQuestionCount + unitQuestionCount > normalizedLimit
+    ) {
+      break;
+    }
+
+    pageUnits.push(unit);
+    pageQuestionCount += unitQuestionCount;
+    cursor += 1;
+
+    if (pageQuestionCount >= normalizedLimit) {
+      break;
+    }
+  }
+
+  return {
+    list: pageUnits.map((unit) => unit.data),
+    nextOffset: cursor,
+    hasMore: cursor < normalizedUnits.length,
+  };
+};
+
 const getEventPayload = (event) => {
   if (
     event &&
@@ -1051,15 +1129,15 @@ const listQuestionSummaries = async (event) => {
   normalizeString(payload?.keyword);
 
   const resp = await db.collection(collections.questions).get();
-  const entities = buildQuestionSummaryEntities(resp.data || []);
-  const list = entities.slice(offset, offset + limit);
-  const nextOffset = offset + list.length;
-  const hasMore = nextOffset < entities.length;
+  const units = buildQuestionSummaryPaginationUnits(resp.data || []);
+  const totalQuestionCount = countQuestionSummaryUnits(units);
+  const page = paginateQuestionSummaryUnits(units, offset, limit);
 
   return ok({
-    list,
-    nextCursor: hasMore ? encodeCursor(nextOffset) : "",
-    hasMore,
+    list: page.list,
+    nextCursor: page.hasMore ? encodeCursor(page.nextOffset) : "",
+    hasMore: page.hasMore,
+    totalQuestionCount,
   });
 };
 

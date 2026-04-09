@@ -25,8 +25,8 @@
     </view>
     <view class="hero-stats">
       <view class="hero-stat">
-        <view class="hero-stat-value">{{questionSummaries.length}}</view>
-        <view class="hero-stat-label">已加载题目</view>
+        <view class="hero-stat-value">{{totalQuestionCount}}</view>
+        <view class="hero-stat-label">题目总数</view>
       </view>
       <view class="hero-stat">
         <view class="hero-stat-value">{{isAdmin ? (listHasMore ? '可继续' : '已到底') : '受限'}}</view>

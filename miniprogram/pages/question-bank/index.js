@@ -2,7 +2,7 @@ const QUESTION_CLOUD_FUNCTION_NAME = "questionService";
 const USER_CLOUD_FUNCTION_NAME = "userService";
 const QUESTION_TYPE = "choice";
 const OPTION_KEY_POOL = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-const QUESTION_SUMMARY_PAGE_SIZE = 20;
+const QUESTION_SUMMARY_PAGE_SIZE = 10;
 const SINGLE_DETAIL_CACHE_PREFIX = "question_detail:";
 const GROUP_DETAIL_CACHE_PREFIX = "question_group_detail:";
 
@@ -658,6 +658,7 @@ Page({
       role: "",
     },
     questionSummaries: [],
+    totalQuestionCount: 0,
     listCursor: "",
     listHasMore: false,
     listLoaded: false,
@@ -806,6 +807,7 @@ Page({
       } else {
         this.setData({
           questionSummaries: [],
+          totalQuestionCount: 0,
           listCursor: "",
           listHasMore: false,
           listLoaded: true,
@@ -843,6 +845,7 @@ Page({
     if (!isAdmin) {
       this.setData({
         questionSummaries: [],
+        totalQuestionCount: 0,
         listCursor: "",
         listHasMore: false,
         listLoaded: true,
@@ -873,6 +876,7 @@ Page({
       const normalizedList = normalizeArray(data.list).map((item) => normalizeQuestionSummaryEntity(item));
       this.setData({
         questionSummaries: decorateQuestionSummaries(normalizedList, []),
+        totalQuestionCount: Number(data.totalQuestionCount || 0),
         listCursor: normalizeString(data.nextCursor),
         listHasMore: !!data.hasMore,
         listLoaded: true,
@@ -921,6 +925,7 @@ Page({
       const mergedList = appendArrays(this.data.questionSummaries, nextList);
       this.setData({
         questionSummaries: decorateQuestionSummaries(mergedList, this.getExpandedGroupIds()),
+        totalQuestionCount: Number(data.totalQuestionCount || this.data.totalQuestionCount || 0),
         listCursor: normalizeString(data.nextCursor),
         listHasMore: !!data.hasMore,
         listLoaded: true,

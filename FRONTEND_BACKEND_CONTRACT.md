@@ -389,7 +389,7 @@
 ```json
 {
   "type": "listQuestionSummaries",
-  "limit": 20,
+  "limit": 10,
   "cursor": "",
   "keyword": ""
 }
@@ -397,7 +397,7 @@
 
 请求规则：
 
-- `limit` 可选，默认由后端决定，建议默认 `20`
+- `limit` 可选，表示每页最多承载多少个“最小单元题目”，建议默认 `10`
 - `cursor` 可选，用于分页续拉
 - `keyword` 可选，用于后续支持按题干摘要等条件搜索
 - 普通用户调用时应直接返回失败
@@ -406,6 +406,7 @@
 
 ```json
 {
+  "totalQuestionCount": 36,
   "list": [
     {
       "entityType": "single",
@@ -465,9 +466,16 @@
 
 返回规则：
 
+- `totalQuestionCount` 表示题库内最小单元题目总数：
+  - 单题计 `1`
+  - 题组按子题数累计
 - 管理员总列表按实体维度返回
 - `entityType = single` 表示单题
 - `entityType = group` 表示题组
+- 分页按“最小单元题目数”控制，而不是按实体条数控制
+- 当页目标容量为 `limit`，默认 `10`
+- 若当页首个实体就是题组，则允许该题组整组入页，即使 `childCount > limit`
+- 若当页已有内容，再遇到题组会导致超过 `limit`，则该题组应留到下一页
 - 题组在总列表中占一行，但前端点击展开后，使用 `childrenPreview` 平铺展示该组下的子题预览
 - `childrenPreview` 只用于预览，不代表已经返回了子题完整详情
 - 列表不得返回完整 `stem`、`sharedStem`、`options.items`、`correctOptionKeys`

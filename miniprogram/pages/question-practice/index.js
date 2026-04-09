@@ -210,6 +210,7 @@ Page({
     content: "",
     loadingUser: false,
     loadingPaper: false,
+    loadingQuestion: false,
     submitting: false,
     mode: "answering",
     currentUser: {
@@ -246,8 +247,7 @@ Page({
 
   onLoad() {
     this.questionCacheMap = new Map();
-    this.loadingQuestionIds = new Set();
-    this.paperQuestions = [];
+    this.questionRequestMap = new Map();
     this.loadInitialData();
   },
 
@@ -356,17 +356,17 @@ Page({
         { type: "getPracticePaper" }
       );
       const data = isPlainObject(result.data) ? result.data : {};
-      const questions = normalizeArray(data.questions).map((item) => normalizeQuestion(item));
-      this.paperQuestions = questions;
+      const questionRefs = buildPaperRefs(normalizeArray(data.questionRefs));
       this.questionCacheMap = new Map();
-      this.loadingQuestionIds = new Set();
+      this.questionRequestMap = new Map();
 
       this.setData({
         loadingPaper: false,
+        loadingQuestion: false,
         mode: "answering",
-        paperQuestionRefs: buildPaperRefs(questions),
+        paperQuestionRefs: questionRefs,
         paperMeta: {
-          totalCount: Number(data.paperMeta && data.paperMeta.totalCount) || questions.length,
+          totalCount: Number(data.paperMeta && data.paperMeta.totalCount) || questionRefs.length,
           generatedAt: Number(data.paperMeta && data.paperMeta.generatedAt) || Date.now(),
         },
         currentQuestionIndex: 0,
@@ -375,13 +375,13 @@ Page({
         answerMap: {},
         loadedQuestionIds: [],
         hasPrevious: false,
-        hasNext: questions.length > 1,
+        hasNext: questionRefs.length > 1,
         reviewQuestionResultsMap: {},
         activeSubmissionId: "",
         submissionSummary: null,
       });
 
-      if (questions.length) {
+      if (questionRefs.length) {
         await this.switchToQuestion(0);
       }
 
@@ -395,6 +395,7 @@ Page({
     } catch (error) {
       this.setData({
         loadingPaper: false,
+        loadingQuestion: false,
       });
       this.showCloudTip("试卷加载失败", getErrorMessage(error));
       throw error;
@@ -411,35 +412,55 @@ Page({
       return this.questionCacheMap.get(ref.questionId);
     }
 
-    if (this.loadingQuestionIds.has(ref.questionId)) {
-      return null;
+    if (this.questionRequestMap.has(ref.questionId)) {
+      return this.questionRequestMap.get(ref.questionId);
     }
 
-    this.loadingQuestionIds.add(ref.questionId);
-    try {
-      const source = this.paperQuestions[index];
-      if (!source) {
-        return null;
-      }
-      this.questionCacheMap.set(ref.questionId, source);
-      const loadedQuestionIds = this.data.loadedQuestionIds.includes(ref.questionId)
-        ? this.data.loadedQuestionIds
-        : this.data.loadedQuestionIds.concat(ref.questionId);
-      this.setData({
-        loadedQuestionIds,
+    const request = this.callFunction(QUESTION_CLOUD_FUNCTION_NAME, {
+      type: "getPracticeQuestionDetail",
+      questionId: ref.questionId,
+    })
+      .then((result) => {
+        const source = normalizeQuestion(result && result.data);
+        if (!source.questionId) {
+          throw new Error("题目数据不完整");
+        }
+        this.questionCacheMap.set(ref.questionId, source);
+        const loadedQuestionIds = this.data.loadedQuestionIds.includes(ref.questionId)
+          ? this.data.loadedQuestionIds
+          : this.data.loadedQuestionIds.concat(ref.questionId);
+        this.setData({
+          loadedQuestionIds,
+        });
+        return source;
+      })
+      .finally(() => {
+        this.questionRequestMap.delete(ref.questionId);
       });
-      return source;
+
+    this.questionRequestMap.set(ref.questionId, request);
+    return request;
+  },
+
+  async loadQuestionForDisplay(index) {
+    this.setData({
+      loadingQuestion: true,
+    });
+    try {
+      return await this.ensureQuestionLoaded(index);
     } finally {
-      this.loadingQuestionIds.delete(ref.questionId);
+      this.setData({
+        loadingQuestion: false,
+      });
     }
   },
 
   prefetchNeighborQuestions(index) {
-    [index - 1, index, index + 1].forEach((targetIndex) => {
+    [index - 1, index + 1].forEach((targetIndex) => {
       if (targetIndex < 0 || targetIndex >= this.data.paperQuestionRefs.length) {
         return;
       }
-      this.ensureQuestionLoaded(targetIndex);
+      this.ensureQuestionLoaded(targetIndex).catch(() => {});
     });
   },
 
@@ -490,19 +511,29 @@ Page({
   },
 
   async switchToQuestion(index) {
-    const target = await this.ensureQuestionLoaded(index);
-    if (!target) {
-      return;
+    try {
+      this.setData({
+        currentQuestion: null,
+        currentSelectedOptionKeys: [],
+        hasPrevious: index > 0,
+        hasNext: index < this.data.paperQuestionRefs.length - 1,
+      });
+      const target = await this.loadQuestionForDisplay(index);
+      if (!target) {
+        return;
+      }
+      const renderedQuestion = this.buildRenderedQuestion(target);
+      this.setData({
+        currentQuestionIndex: index,
+        currentQuestion: renderedQuestion,
+        currentSelectedOptionKeys: renderedQuestion.selectedOptionKeys,
+        hasPrevious: index > 0,
+        hasNext: index < this.data.paperQuestionRefs.length - 1,
+      });
+      this.prefetchNeighborQuestions(index);
+    } catch (error) {
+      this.showCloudTip("题目加载失败", getErrorMessage(error));
     }
-    const renderedQuestion = this.buildRenderedQuestion(target);
-    this.setData({
-      currentQuestionIndex: index,
-      currentQuestion: renderedQuestion,
-      currentSelectedOptionKeys: renderedQuestion.selectedOptionKeys,
-      hasPrevious: index > 0,
-      hasNext: index < this.data.paperQuestionRefs.length - 1,
-    });
-    this.prefetchNeighborQuestions(index);
   },
 
   goToPreviousQuestion() {
@@ -737,6 +768,7 @@ Page({
           submittedAt: Number(summary.submittedAt || Date.now()),
           submittedAtText: formatTime(Number(summary.submittedAt || Date.now())),
         },
+        loadingQuestion: false,
         currentQuestion: currentQuestionSource || null,
       });
       wx.showToast({

@@ -57,13 +57,17 @@
       正在加载记录详情...
     </view>
 
-    <view class="empty-state" wx:if="{{!loading && !questions.length}}">
+    <view class="loading-state" wx:if="{{!loading && loadingQuestion}}">
+      正在加载当前题目...
+    </view>
+
+    <view class="empty-state" wx:if="{{!loading && !questionRefs.length}}">
       当前记录暂无可展示的题目快照。
     </view>
 
     <view class="question-card" wx:if="{{currentQuestion}}">
       <view class="progress-row">
-        <view class="progress-badge">{{currentQuestionIndex + 1}} / {{questions.length}}</view>
+        <view class="progress-badge">{{currentQuestionIndex + 1}} / {{questionRefs.length}}</view>
         <view class="question-status-tag question-status-tag-correct" wx:if="{{currentQuestion.reviewResult && currentQuestion.reviewResult.isCorrect}}">答对</view>
         <view class="question-status-tag question-status-tag-wrong" wx:if="{{currentQuestion.reviewResult && !currentQuestion.reviewResult.isCorrect}}">答错</view>
         <view class="question-tag" wx:if="{{isAdmin && currentQuestion.questionLabel}}">{{currentQuestion.questionLabel}}</view>

@@ -9,6 +9,7 @@ const {
   ENTRY_MODE_GROUPED,
   OPTION_MODE_PER_OPTION,
   OPTION_MODE_GROUPED_ASSET,
+  PRACTICE_PAPER_QUESTION_COUNT,
 } = require("./constants");
 const {
   ok,
@@ -1142,9 +1143,33 @@ const buildPracticeSubmissionQuestionSnapshot = (question) => ({
   version: question.version,
 });
 
-const buildPracticePaperQuestions = (questions) => {
+const buildPracticeQuestionRef = (question, index = 0) => ({
+  questionId: question.questionId,
+  questionLabel: normalizeString(question.questionLabel),
+  groupId: question.groupId,
+  entryMode: question.entryMode,
+  groupOrder: Number(question.groupOrder || 1),
+  version: normalizeString(question.version || "0"),
+  index: Number(index || 0),
+});
+
+const buildPracticeQuestionRefs = (questions) =>
+  (Array.isArray(questions) ? questions : []).map((question, index) =>
+    buildPracticeQuestionRef(question, index),
+  );
+
+const shuffleArray = (items) => {
+  const shuffled = [...items];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = crypto.randomInt(index + 1);
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+};
+
+const buildPracticePaperUnits = (questions) => {
   const groupedMap = new Map();
-  const singleQuestions = [];
+  const singleUnits = [];
 
   sortQuestions(questions || []).forEach((question) => {
     const entryMode = question?.entryMode || ENTRY_MODE_SINGLE;
@@ -1156,20 +1181,54 @@ const buildPracticePaperQuestions = (questions) => {
       groupedMap.get(groupId).push(question);
       return;
     }
-    singleQuestions.push(question);
+    singleUnits.push({
+      questions: [question],
+      questionCount: 1,
+    });
   });
 
-  const groupedQuestions = [];
+  const groupedUnits = [];
   groupedMap.forEach((items) => {
     const sortedItems = [...items].sort((left, right) => {
       const leftOrder = Number(left?.groupOrder || 0);
       const rightOrder = Number(right?.groupOrder || 0);
       return leftOrder - rightOrder;
     });
-    sortedItems.forEach((item) => groupedQuestions.push(item));
+    groupedUnits.push({
+      questions: sortedItems,
+      questionCount: sortedItems.length,
+    });
   });
 
-  return sortQuestions(singleQuestions.concat(groupedQuestions)).map((question) =>
+  return singleUnits.concat(groupedUnits);
+};
+
+const normalizePracticePaperQuestionCount = (value) => {
+  const normalized = Number(value);
+  if (!Number.isFinite(normalized) || normalized <= 0) {
+    return 20;
+  }
+  return Math.floor(normalized);
+};
+
+const buildPracticePaperQuestions = (
+  questions,
+  configuredCount = PRACTICE_PAPER_QUESTION_COUNT,
+) => {
+  const practiceUnits = buildPracticePaperUnits(questions);
+  const shuffledUnits = shuffleArray(practiceUnits);
+  const selectedQuestions = [];
+  let selectedCount = 0;
+
+  shuffledUnits.forEach((unit) => {
+    if (selectedCount >= configuredCount) {
+      return;
+    }
+    selectedQuestions.push(...unit.questions);
+    selectedCount += unit.questionCount;
+  });
+
+  return selectedQuestions.map((question) =>
     buildPracticeQuestionItem(question),
   );
 };
@@ -1178,14 +1237,30 @@ const getPracticePaper = async (event) => {
   await ensureUserRecord(event);
   const collections = getCollections(event);
   const resp = await db.collection(collections.questions).get();
-  const questions = buildPracticePaperQuestions(resp.data || []);
+  const configuredCount = normalizePracticePaperQuestionCount(PRACTICE_PAPER_QUESTION_COUNT);
+  const questions = buildPracticePaperQuestions(resp.data || [], configuredCount);
   return ok({
     paperMeta: {
+      configuredCount,
       totalCount: questions.length,
       generatedAt: Date.now(),
     },
-    questions,
+    questionRefs: buildPracticeQuestionRefs(questions),
   });
+};
+
+const getPracticeQuestionDetail = async (event) => {
+  await ensureUserRecord(event);
+  const collections = getCollections(event);
+  const questionId = normalizeString(event?.data?.questionId || event?.questionId);
+  if (!questionId) {
+    return fail("questionId 不能为空");
+  }
+  const question = await getQuestionById(questionId, collections.questions);
+  if (!question) {
+    return fail("题目不存在");
+  }
+  return ok(buildPracticeQuestionItem(question));
 };
 
 const normalizeSelectedOptionKeys = (keys, label) => {
@@ -1461,8 +1536,39 @@ const getPracticeSubmissionDetail = async (event) => {
         questionMissing: !!item?.questionMissing,
       })),
     },
-    questions: cloneJson(record.questionSnapshots || []),
+    questionRefs: buildPracticeQuestionRefs(record?.paperSnapshot?.questions || []),
   });
+};
+
+const getPracticeSubmissionQuestionDetail = async (event) => {
+  const user = await ensureUserRecord(event);
+  const collections = getCollections(event);
+  const submissionId = normalizeString(event?.data?.submissionId || event?.submissionId);
+  const questionId = normalizeString(event?.data?.questionId || event?.questionId);
+  if (!submissionId) {
+    return fail("submissionId 不能为空");
+  }
+  if (!questionId) {
+    return fail("questionId 不能为空");
+  }
+
+  const record = await getPracticeSubmissionById(
+    submissionId,
+    user.openid,
+    collections.practiceSubmissions,
+  );
+  if (!record) {
+    return fail("做题记录不存在");
+  }
+
+  const question = Array.isArray(record?.questionSnapshots)
+    ? record.questionSnapshots.find((item) => normalizeString(item?.questionId) === questionId)
+    : null;
+  if (!question) {
+    return fail("题目快照不存在");
+  }
+
+  return ok(cloneJson(question));
 };
 
 const buildSingleQuestionDocument = async (payload, user, existingQuestion = null) => {
@@ -1659,12 +1765,16 @@ const dispatch = async (event) => {
       return getQuestionGroupDetail(event);
     case "getPracticePaper":
       return getPracticePaper(event);
+    case "getPracticeQuestionDetail":
+      return getPracticeQuestionDetail(event);
     case "submitPracticePaper":
       return submitPracticePaper(event);
     case "listPracticeSubmissions":
       return listPracticeSubmissions(event);
     case "getPracticeSubmissionDetail":
       return getPracticeSubmissionDetail(event);
+    case "getPracticeSubmissionQuestionDetail":
+      return getPracticeSubmissionQuestionDetail(event);
     case "createQuestion":
       return createQuestion(event);
     case "updateQuestion":

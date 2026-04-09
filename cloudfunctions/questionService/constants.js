@@ -8,6 +8,8 @@ const ENTRY_MODE_SINGLE = "single";
 const ENTRY_MODE_GROUPED = "grouped";
 const OPTION_MODE_PER_OPTION = "per_option";
 const OPTION_MODE_GROUPED_ASSET = "grouped_asset";
+//在这里修改试卷配额
+const PRACTICE_PAPER_QUESTION_COUNT = 5;
 
 const normalizeRuntimeDataVersion = (value) =>
   String(value || "").trim().toLowerCase() === "develop" ? "develop" : "trial";
@@ -32,6 +34,7 @@ module.exports = {
   ENTRY_MODE_GROUPED,
   OPTION_MODE_PER_OPTION,
   OPTION_MODE_GROUPED_ASSET,
+  PRACTICE_PAPER_QUESTION_COUNT,
   normalizeRuntimeDataVersion,
   resolveCollectionNames,
 };

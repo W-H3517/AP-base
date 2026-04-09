@@ -191,11 +191,12 @@ Page({
     title: "",
     content: "",
     loading: false,
+    loadingQuestion: false,
     isAdmin: false,
     navMetrics: getNavigationMetrics(),
     submissionId: "",
     summary: null,
-    questions: [],
+    questionRefs: [],
     answerMap: {},
     reviewQuestionResultsMap: {},
     currentQuestionIndex: 0,
@@ -213,6 +214,8 @@ Page({
 
   onLoad(options) {
     this.submissionId = normalizeString(options && options.submissionId);
+    this.questionCacheMap = new Map();
+    this.questionRequestMap = new Map();
     this.loadCurrentUser();
     this.loadSubmissionDetail();
   },
@@ -273,7 +276,15 @@ Page({
       });
       const result = unwrapCloudResult(resp);
       const data = isPlainObject(result.data) ? result.data : {};
-      const questions = normalizeArray(data.questions).map((item) => normalizeQuestion(item));
+      const questionRefs = normalizeArray(data.questionRefs).map((item) => ({
+        questionId: normalizeString(item.questionId),
+        questionLabel: normalizeString(item.questionLabel),
+        groupId: normalizeString(item.groupId),
+        entryMode: item.entryMode === "grouped" ? "grouped" : "single",
+        groupOrder: Number(item.groupOrder || 1),
+        version: normalizeString(item.version || "0"),
+        index: Number(item.index || 0),
+      }));
       const answers = {};
       normalizeArray(data.answers).forEach((item) => {
         const questionId = normalizeString(item && item.questionId);
@@ -286,32 +297,35 @@ Page({
         data.judgeResult && data.judgeResult.questionResults
       );
       const summarySource = isPlainObject(data.summary) ? data.summary : {};
-      this.questions = questions;
+      this.questionCacheMap = new Map();
+      this.questionRequestMap = new Map();
       this.setData({
         loading: false,
+        loadingQuestion: false,
         submissionId: data.submissionId || this.submissionId,
         summary: {
-          totalCount: Number(summarySource.totalCount || questions.length),
+          totalCount: Number(summarySource.totalCount || questionRefs.length),
           answeredCount: Number(summarySource.answeredCount || 0),
           correctCount: Number(summarySource.correctCount || 0),
           score: Number(summarySource.score || 0),
           submittedAt: Number(summarySource.submittedAt || 0),
           submittedAtText: formatTime(summarySource.submittedAt),
         },
-        questions,
+        questionRefs,
         answerMap: answers,
         reviewQuestionResultsMap,
         currentQuestionIndex: 0,
         currentQuestion: null,
         hasPrevious: false,
-        hasNext: questions.length > 1,
+        hasNext: questionRefs.length > 1,
       });
-      if (questions.length) {
-        this.switchToQuestion(0);
+      if (questionRefs.length) {
+        await this.switchToQuestion(0);
       }
     } catch (error) {
       this.setData({
         loading: false,
+        loadingQuestion: false,
       });
       this.showCloudTip("加载记录详情失败", getErrorMessage(error));
     }
@@ -342,17 +356,89 @@ Page({
     };
   },
 
-  switchToQuestion(index) {
-    const question = this.questions[index];
-    if (!question) {
-      return;
+  async ensureQuestionLoaded(index) {
+    const ref = this.data.questionRefs[index];
+    if (!ref) {
+      return null;
     }
+
+    if (this.questionCacheMap.has(ref.questionId)) {
+      return this.questionCacheMap.get(ref.questionId);
+    }
+
+    if (this.questionRequestMap.has(ref.questionId)) {
+      return this.questionRequestMap.get(ref.questionId);
+    }
+
+    const request = wx.cloud.callFunction({
+      name: QUESTION_CLOUD_FUNCTION_NAME,
+      data: {
+        type: "getPracticeSubmissionQuestionDetail",
+        submissionId: this.data.submissionId || this.submissionId,
+        questionId: ref.questionId,
+        ...getRuntimeContext(),
+      },
+    })
+      .then((resp) => {
+        const result = unwrapCloudResult(resp);
+        const question = normalizeQuestion(result && result.data);
+        if (!question.questionId) {
+          throw new Error("题目快照数据不完整");
+        }
+        this.questionCacheMap.set(ref.questionId, question);
+        return question;
+      })
+      .finally(() => {
+        this.questionRequestMap.delete(ref.questionId);
+      });
+
+    this.questionRequestMap.set(ref.questionId, request);
+    return request;
+  },
+
+  async loadQuestionForDisplay(index) {
     this.setData({
-      currentQuestionIndex: index,
-      currentQuestion: this.buildRenderedQuestion(question),
-      hasPrevious: index > 0,
-      hasNext: index < this.questions.length - 1,
+      loadingQuestion: true,
     });
+    try {
+      return await this.ensureQuestionLoaded(index);
+    } finally {
+      this.setData({
+        loadingQuestion: false,
+      });
+    }
+  },
+
+  prefetchNeighborQuestions(index) {
+    [index - 1, index + 1].forEach((targetIndex) => {
+      if (targetIndex < 0 || targetIndex >= this.data.questionRefs.length) {
+        return;
+      }
+      this.ensureQuestionLoaded(targetIndex).catch(() => {});
+    });
+  },
+
+  async switchToQuestion(index) {
+    try {
+      this.setData({
+        currentQuestion: null,
+        hasPrevious: index > 0,
+        hasNext: index < this.data.questionRefs.length - 1,
+      });
+      const question = await this.loadQuestionForDisplay(index);
+      if (!question) {
+        return;
+      }
+      this.setData({
+        currentQuestionIndex: index,
+        currentQuestion: this.buildRenderedQuestion(question),
+        hasPrevious: index > 0,
+        hasNext: index < this.data.questionRefs.length - 1,
+      });
+      this.prefetchNeighborQuestions(index);
+    } catch (error) {
+      this.showCloudTip("题目快照加载失败", getErrorMessage(error));
+    }
   },
 
   goToPreviousQuestion() {

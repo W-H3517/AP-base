@@ -114,6 +114,10 @@
       正在准备题目，请稍候...
     </view>
 
+    <view class="loading-state" wx:if="{{!loadingPaper && loadingQuestion && mode === 'answering'}}">
+      正在加载当前题目...
+    </view>
+
     <view class="empty-state" wx:if="{{!loadingPaper && !paperQuestionRefs.length}}">
       当前还没有可作答题目，请稍后再试。
     </view>

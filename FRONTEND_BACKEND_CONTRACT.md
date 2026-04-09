@@ -829,7 +829,199 @@
 - 若 `groupId` 不存在，应返回失败
 - 删除成功后，该题组对应的详情缓存应视为失效
 
-## 8. 前端调用分流规则
+## 8. 在线答题与记录接口
+
+由 `questionService` 处理。
+
+### 8.1 `getPracticePaper`
+
+请求：
+
+```json
+{
+  "type": "getPracticePaper"
+}
+```
+
+返回 `data`：
+
+```json
+{
+  "paperMeta": {
+    "configuredCount": 20,
+    "totalCount": 20,
+    "generatedAt": 1712563200000
+  },
+  "questionRefs": [
+    {
+      "questionId": "q_xxx",
+      "questionLabel": "题号A-01",
+      "groupId": "",
+      "entryMode": "single",
+      "groupOrder": 1,
+      "version": "1712563200000",
+      "index": 0
+    }
+  ]
+}
+```
+
+说明：
+
+- 首屏只返回试卷元信息和轻量题目引用列表
+- `questionRefs` 不返回完整 `stem`、`sharedStem`、`options`
+- `questionRefs` 按最终作答顺序平铺返回
+
+### 8.2 `getPracticeQuestionDetail`
+
+请求：
+
+```json
+{
+  "type": "getPracticeQuestionDetail",
+  "questionId": "q_xxx"
+}
+```
+
+返回 `data`：
+
+- 一条完整可作答题目对象
+- 结构与答题页当前使用的题目对象一致
+
+### 8.3 `submitPracticePaper`
+
+请求：
+
+```json
+{
+  "type": "submitPracticePaper",
+  "paperSnapshot": {
+    "totalCount": 20,
+    "questions": [
+      {
+        "questionId": "q_xxx",
+        "questionLabel": "题号A-01",
+        "groupId": "",
+        "entryMode": "single",
+        "groupOrder": 1,
+        "version": "1712563200000"
+      }
+    ]
+  },
+  "answers": [
+    {
+      "questionId": "q_xxx",
+      "selectedOptionKeys": ["A"],
+      "answeredAt": 1712563200000
+    }
+  ]
+}
+```
+
+说明：
+
+- 交卷仍基于 `paperSnapshot.questions` 提交，不依赖前端是否已加载完整题面
+
+### 8.4 `listPracticeSubmissions`
+
+请求：
+
+```json
+{
+  "type": "listPracticeSubmissions"
+}
+```
+
+返回 `data`：
+
+```json
+{
+  "list": [
+    {
+      "submissionId": "sub_xxx",
+      "totalCount": 20,
+      "answeredCount": 18,
+      "correctCount": 15,
+      "score": 75,
+      "submittedAt": 1712563200000
+    }
+  ]
+}
+```
+
+### 8.5 `getPracticeSubmissionDetail`
+
+请求：
+
+```json
+{
+  "type": "getPracticeSubmissionDetail",
+  "submissionId": "sub_xxx"
+}
+```
+
+返回 `data`：
+
+```json
+{
+  "submissionId": "sub_xxx",
+  "summary": {
+    "totalCount": 20,
+    "answeredCount": 18,
+    "correctCount": 15,
+    "score": 75,
+    "submittedAt": 1712563200000
+  },
+  "paperSnapshot": {
+    "totalCount": 20,
+    "questions": []
+  },
+  "answers": [],
+  "judgeResult": {
+    "totalCount": 20,
+    "answeredCount": 18,
+    "correctCount": 15,
+    "score": 75,
+    "questionResults": []
+  },
+  "questionRefs": [
+    {
+      "questionId": "q_xxx",
+      "questionLabel": "题号A-01",
+      "groupId": "",
+      "entryMode": "single",
+      "groupOrder": 1,
+      "version": "1712563200000",
+      "index": 0
+    }
+  ]
+}
+```
+
+说明：
+
+- 记录详情首屏只返回摘要、答案、判题结果和轻量题目引用列表
+- `questionRefs` 来源于提交时的 `paperSnapshot.questions`
+- 不再整包返回完整题目快照数组
+
+### 8.6 `getPracticeSubmissionQuestionDetail`
+
+请求：
+
+```json
+{
+  "type": "getPracticeSubmissionQuestionDetail",
+  "submissionId": "sub_xxx",
+  "questionId": "q_xxx"
+}
+```
+
+返回 `data`：
+
+- 该次提交记录中对应题目的完整题目快照
+- 只能读取当前用户自己的提交记录
+
+## 9. 前端调用分流规则
 
 当前前端调用规则如下：
 
@@ -857,7 +1049,7 @@
 - `deleteQuestionGroup`
 - `deleteQuestion`
 
-## 9. 后续改动原则
+## 10. 后续改动原则
 
 如果后续重构前端或继续演进后端，建议遵守：
 

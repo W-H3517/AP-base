@@ -2,8 +2,6 @@ const crypto = require("crypto");
 const cloud = require("wx-server-sdk");
 const { db } = require("./db");
 const {
-  QUESTIONS_COLLECTION,
-  PRACTICE_SUBMISSIONS_COLLECTION,
   QUESTION_TYPE_CHOICE,
   CONTENT_SOURCE_TEXT,
   CONTENT_SOURCE_IMAGE,
@@ -19,8 +17,15 @@ const {
   normalizeUpperString,
   sortQuestions,
 } = require("./utils");
-const { ensureUserRecord, requireAdmin, normalizeRole } = require("./userAccess");
+const { ensureUserRecord, requireAdmin, normalizeRole, getCollections } = require("./userAccess");
 
+const STORAGE_ROOT_DEVELOP = "develop";
+const STORAGE_ROOT_TRIAL = "trial";
+const STORAGE_ROOT_RELEASE = "trial";
+const STORAGE_ROOTS = [
+  STORAGE_ROOT_DEVELOP,
+  STORAGE_ROOT_TRIAL,
+];
 const TEMP_RESOURCE_PREFIX = "temp/";
 const SINGLE_RESOURCE_PREFIX = "Resources/single";
 const GROUP_RESOURCE_PREFIX = "Resources/group";
@@ -219,6 +224,7 @@ const validateEntryMode = (entryMode) => {
 
 const normalizeQuestionCore = (payload, { requireQuestionId = false } = {}) => {
   const questionId = normalizeString(payload?.questionId);
+  const questionLabel = normalizeString(payload?.questionLabel);
   const questionType = normalizeString(payload?.questionType);
   const stem = normalizeRichStem(payload?.stem, "stem");
   const optionMode = validateOptionMode(payload?.optionMode);
@@ -227,6 +233,9 @@ const normalizeQuestionCore = (payload, { requireQuestionId = false } = {}) => {
 
   if (requireQuestionId && !questionId) {
     throw new Error("questionId 不能为空");
+  }
+  if (!questionLabel) {
+    throw new Error("questionLabel 不能为空");
   }
   if (questionType !== QUESTION_TYPE_CHOICE) {
     throw new Error("questionType 仅支持 choice");
@@ -285,6 +294,7 @@ const normalizeQuestionCore = (payload, { requireQuestionId = false } = {}) => {
 
   return {
     questionId,
+    questionLabel,
     questionType,
     stem,
     optionMode,
@@ -324,11 +334,11 @@ const normalizeGroupedChildren = (children, sharedStem) => {
   }));
 };
 
-const generateQuestionId = async () => {
+const generateQuestionId = async (questionsCollectionName) => {
   for (let i = 0; i < 8; i += 1) {
     const candidate = `q_${crypto.randomBytes(16).toString("hex")}`;
     const existed = await db
-      .collection(QUESTIONS_COLLECTION)
+      .collection(questionsCollectionName)
       .where({ questionId: candidate })
       .limit(1)
       .get();
@@ -339,11 +349,11 @@ const generateQuestionId = async () => {
   throw new Error("题目ID生成失败，请重试");
 };
 
-const generateGroupId = async () => {
+const generateGroupId = async (questionsCollectionName) => {
   for (let i = 0; i < 8; i += 1) {
     const candidate = `g_${crypto.randomBytes(12).toString("hex")}`;
     const existed = await db
-      .collection(QUESTIONS_COLLECTION)
+      .collection(questionsCollectionName)
       .where({ groupId: candidate })
       .limit(1)
       .get();
@@ -354,18 +364,18 @@ const generateGroupId = async () => {
   throw new Error("题组ID生成失败，请重试");
 };
 
-const getQuestionById = async (questionId) => {
+const getQuestionById = async (questionId, questionsCollectionName) => {
   const resp = await db
-    .collection(QUESTIONS_COLLECTION)
+    .collection(questionsCollectionName)
     .where({ questionId })
     .limit(1)
     .get();
   return resp.data?.[0] || null;
 };
 
-const getQuestionsByGroupId = async (groupId) => {
+const getQuestionsByGroupId = async (groupId, questionsCollectionName) => {
   const resp = await db
-    .collection(QUESTIONS_COLLECTION)
+    .collection(questionsCollectionName)
     .where({ groupId })
     .get();
   return (resp.data || []).sort((left, right) => {
@@ -375,9 +385,9 @@ const getQuestionsByGroupId = async (groupId) => {
   });
 };
 
-const getPracticeSubmissionById = async (submissionId, openid) => {
+const getPracticeSubmissionById = async (submissionId, openid, practiceSubmissionsCollectionName) => {
   const resp = await db
-    .collection(PRACTICE_SUBMISSIONS_COLLECTION)
+    .collection(practiceSubmissionsCollectionName)
     .where({ submissionId, openid })
     .limit(1)
     .get();
@@ -450,20 +460,81 @@ const sanitizePathSegment = (value, fallback = "resource") => {
   return normalized || fallback;
 };
 
+const normalizeStorageRoot = (value) => {
+  const normalized = normalizeString(value).toLowerCase();
+  if (normalized === "develop") {
+    return STORAGE_ROOT_DEVELOP;
+  }
+  if (normalized === "trial" || normalized === "release") {
+    return STORAGE_ROOT_TRIAL;
+  }
+  return "";
+};
+
+const normalizeRuntimeEnvVersion = (value) =>
+  normalizeString(value).toLowerCase() === "develop" ? "develop" : "trial";
+
+const resolveStorageRootFromRuntimeEnvVersion = (value) =>
+  normalizeStorageRoot(normalizeRuntimeEnvVersion(value)) || STORAGE_ROOT_RELEASE;
+
+const buildTempResourcePrefix = (storageRoot) =>
+  `${normalizeStorageRoot(storageRoot) || STORAGE_ROOT_RELEASE}/${TEMP_RESOURCE_PREFIX}`;
+
+const buildSingleResourcePrefix = (storageRoot) =>
+  `${normalizeStorageRoot(storageRoot) || STORAGE_ROOT_RELEASE}/${SINGLE_RESOURCE_PREFIX}`;
+
+const buildGroupResourcePrefix = (storageRoot) =>
+  `${normalizeStorageRoot(storageRoot) || STORAGE_ROOT_RELEASE}/${GROUP_RESOURCE_PREFIX}`;
+
 const getFileExtensionFromFileId = (fileId) => {
   const normalized = normalizeString(fileId);
   const matched = normalized.match(/(\.[a-zA-Z0-9]+)(?:$|[?#])/);
   return matched ? matched[1].toLowerCase() : ".png";
 };
 
+const inferStorageRootFromFileId = (fileId) => {
+  const normalized = normalizeString(fileId);
+  for (const storageRoot of STORAGE_ROOTS) {
+    if (
+      normalized.includes(`/${storageRoot}/${TEMP_RESOURCE_PREFIX}`) ||
+      normalized.includes(`${storageRoot}/${TEMP_RESOURCE_PREFIX}`) ||
+      normalized.includes(`/${storageRoot}/Resources/`) ||
+      normalized.includes(`${storageRoot}/Resources/`)
+    ) {
+      return storageRoot;
+    }
+  }
+  return "";
+};
+
 const isTempFileId = (fileId) => {
   const normalized = normalizeString(fileId);
-  return normalized.includes(`/${TEMP_RESOURCE_PREFIX}`) || normalized.includes(TEMP_RESOURCE_PREFIX);
+  return (
+    normalized.includes(`/${TEMP_RESOURCE_PREFIX}`) ||
+    normalized.includes(TEMP_RESOURCE_PREFIX) ||
+    STORAGE_ROOTS.some((storageRoot) => {
+      const scopedPrefix = buildTempResourcePrefix(storageRoot);
+      return normalized.includes(`/${scopedPrefix}`) || normalized.includes(scopedPrefix);
+    })
+  );
 };
 
 const isManagedResourceFileId = (fileId) => {
   const normalized = normalizeString(fileId);
-  return normalized.includes("/Resources/") || normalized.includes("Resources/");
+  return (
+    normalized.includes("/Resources/") ||
+    normalized.includes("Resources/") ||
+    STORAGE_ROOTS.some((storageRoot) => {
+      const singlePrefix = buildSingleResourcePrefix(storageRoot);
+      const groupPrefix = buildGroupResourcePrefix(storageRoot);
+      return (
+        normalized.includes(`/${singlePrefix}`) ||
+        normalized.includes(singlePrefix) ||
+        normalized.includes(`/${groupPrefix}`) ||
+        normalized.includes(groupPrefix)
+      );
+    })
+  );
 };
 
 const buildResourceCloudPath = (basePath, kind, fileId, suffix = "") => {
@@ -515,6 +586,55 @@ const extractFileIdsFromOptions = (options, optionMode) => {
   }
 
   return fileIds;
+};
+
+const collectStorageRoots = (fileIds) =>
+  [...new Set((fileIds || []).map((fileId) => inferStorageRootFromFileId(fileId)).filter(Boolean))];
+
+const extractStorageRootsFromQuestionPayload = (question, { includeSharedStem = true } = {}) => {
+  if (!question) {
+    return [];
+  }
+  const fileIds = [];
+  if (includeSharedStem) {
+    fileIds.push(...extractFileIdsFromRichContent(question.sharedStem));
+  }
+  fileIds.push(...extractFileIdsFromRichContent(question.stem));
+  fileIds.push(...extractFileIdsFromOptions(question.options, question.optionMode));
+  return collectStorageRoots(fileIds);
+};
+
+const extractStorageRootsFromGroupPayload = (sharedStem, children) => {
+  const fileIds = [...extractFileIdsFromRichContent(sharedStem)];
+  (children || []).forEach((child) => {
+    fileIds.push(...extractFileIdsFromRichContent(child.stem));
+    fileIds.push(...extractFileIdsFromOptions(child.options, child.optionMode));
+  });
+  return collectStorageRoots(fileIds);
+};
+
+const resolveStorageRoot = (event, payload, { grouped = false } = {}) => {
+  const payloadRoots = grouped
+    ? extractStorageRootsFromGroupPayload(payload.sharedStem, payload.children)
+    : extractStorageRootsFromQuestionPayload(payload);
+
+  if (payloadRoots.length > 1) {
+    throw new Error("上传文件必须来自同一运行版本目录");
+  }
+  if (payloadRoots.length === 1) {
+    return payloadRoots[0];
+  }
+
+  const eventStorageRoot = normalizeStorageRoot(event?.storageRoot || event?.data?.storageRoot);
+  const runtimeEnvStorageRoot = resolveStorageRootFromRuntimeEnvVersion(
+    event?.runtimeEnvVersion || event?.data?.runtimeEnvVersion,
+  );
+
+  if (eventStorageRoot && eventStorageRoot !== runtimeEnvStorageRoot) {
+    throw new Error("storageRoot 与 runtimeEnvVersion 不一致");
+  }
+
+  return eventStorageRoot || runtimeEnvStorageRoot || STORAGE_ROOT_RELEASE;
 };
 
 const extractQuestionResourceFileIds = (question, { includeSharedStem = true } = {}) => {
@@ -660,9 +780,9 @@ const materializeOptionsResources = async (options, optionMode, basePath, suffix
   };
 };
 
-const materializeSingleQuestionResources = async (question, questionId) => {
+const materializeSingleQuestionResources = async (question, questionId, storageRoot) => {
   const nextQuestion = cloneJson(question);
-  const basePath = `${SINGLE_RESOURCE_PREFIX}/${questionId}`;
+  const basePath = `${buildSingleResourcePrefix(storageRoot)}/${questionId}`;
   const createdFileIds = [];
 
   const sharedStemResult = await materializeRichContentResources(
@@ -695,8 +815,8 @@ const materializeSingleQuestionResources = async (question, questionId) => {
   };
 };
 
-const materializeGroupResources = async (sharedStem, children, groupId) => {
-  const basePath = `${GROUP_RESOURCE_PREFIX}/${groupId}`;
+const materializeGroupResources = async (sharedStem, children, groupId, storageRoot) => {
+  const basePath = `${buildGroupResourcePrefix(storageRoot)}/${groupId}`;
   const createdFileIds = [];
 
   const sharedStemResult = await materializeRichContentResources(
@@ -752,6 +872,7 @@ const stripQuestionByRole = (
   const base = {
     _id: question._id,
     questionId: question.questionId,
+    questionLabel: normalizeString(question.questionLabel),
     groupId: normalizeString(question.groupId),
     questionType: question.questionType || QUESTION_TYPE_CHOICE,
     entryMode: question.entryMode || ENTRY_MODE_SINGLE,
@@ -796,6 +917,7 @@ const stripQuestionByRole = (
 const buildSingleQuestionSummary = (question) => ({
   entityType: "single",
   questionId: question.questionId,
+  questionLabel: normalizeString(question.questionLabel),
   groupId: "",
   questionType: question.questionType || QUESTION_TYPE_CHOICE,
   entryMode: ENTRY_MODE_SINGLE,
@@ -807,6 +929,7 @@ const buildSingleQuestionSummary = (question) => ({
 
 const buildGroupChildPreview = (question, version) => ({
   questionId: question.questionId,
+  questionLabel: normalizeString(question.questionLabel),
   groupId: normalizeString(question.groupId),
   groupOrder: Number(question.groupOrder || 1),
   questionType: question.questionType || QUESTION_TYPE_CHOICE,
@@ -906,9 +1029,10 @@ const getEventPayload = (event) => {
   return payload;
 };
 
-const listQuestions = async () => {
-  const user = await ensureUserRecord();
-  const resp = await db.collection(QUESTIONS_COLLECTION).get();
+const listQuestions = async (event) => {
+  const user = await ensureUserRecord(event);
+  const collections = getCollections(event);
+  const resp = await db.collection(collections.questions).get();
   return ok(
     sortQuestions(resp.data || []).map((question) =>
       stripQuestionByRole(question, user.role),
@@ -917,14 +1041,15 @@ const listQuestions = async () => {
 };
 
 const listQuestionSummaries = async (event) => {
-  await requireAdmin();
+  await requireAdmin(event);
+  const collections = getCollections(event);
   const payload = getEventPayload(event);
   const limit = normalizeListLimit(payload?.limit);
   const offset = decodeCursor(payload?.cursor);
 
   normalizeString(payload?.keyword);
 
-  const resp = await db.collection(QUESTIONS_COLLECTION).get();
+  const resp = await db.collection(collections.questions).get();
   const entities = buildQuestionSummaryEntities(resp.data || []);
   const list = entities.slice(offset, offset + limit);
   const nextOffset = offset + list.length;
@@ -938,12 +1063,13 @@ const listQuestionSummaries = async (event) => {
 };
 
 const getQuestionDetail = async (event) => {
-  const user = await ensureUserRecord();
+  const user = await ensureUserRecord(event);
+  const collections = getCollections(event);
   const questionId = normalizeString(event?.data?.questionId || event?.questionId);
   if (!questionId) {
     return fail("questionId 不能为空");
   }
-  const question = await getQuestionById(questionId);
+  const question = await getQuestionById(questionId, collections.questions);
   if (!question) {
     return fail("题目不存在");
   }
@@ -951,12 +1077,13 @@ const getQuestionDetail = async (event) => {
 };
 
 const getQuestionGroupDetail = async (event) => {
-  const user = await ensureUserRecord();
+  const user = await ensureUserRecord(event);
+  const collections = getCollections(event);
   const groupId = normalizeString(event?.data?.groupId || event?.groupId);
   if (!groupId) {
     return fail("groupId 不能为空");
   }
-  const questions = await getQuestionsByGroupId(groupId);
+  const questions = await getQuestionsByGroupId(groupId, collections.questions);
   if (!questions.length) {
     return fail("题组不存在");
   }
@@ -980,6 +1107,7 @@ const buildPracticeQuestionItem = (question) => {
   const sanitized = stripQuestionByRole(question, "user", getSingleQuestionVersion(question));
   return {
     questionId: sanitized.questionId,
+    questionLabel: normalizeString(sanitized.questionLabel),
     groupId: sanitized.groupId,
     entryMode: sanitized.entryMode,
     groupOrder: Number(sanitized.groupOrder || 1),
@@ -999,6 +1127,7 @@ const buildPracticeQuestionItem = (question) => {
 
 const buildPracticeSubmissionQuestionSnapshot = (question) => ({
   questionId: question.questionId,
+  questionLabel: normalizeString(question.questionLabel),
   groupId: question.groupId,
   entryMode: question.entryMode,
   groupOrder: Number(question.groupOrder || 1),
@@ -1045,9 +1174,10 @@ const buildPracticePaperQuestions = (questions) => {
   );
 };
 
-const getPracticePaper = async () => {
-  await ensureUserRecord();
-  const resp = await db.collection(QUESTIONS_COLLECTION).get();
+const getPracticePaper = async (event) => {
+  await ensureUserRecord(event);
+  const collections = getCollections(event);
+  const resp = await db.collection(collections.questions).get();
   const questions = buildPracticePaperQuestions(resp.data || []);
   return ok({
     paperMeta: {
@@ -1105,11 +1235,16 @@ const normalizePaperSnapshotQuestions = (questions) => {
   }
   return questions.map((question, index) => {
     const questionId = normalizeString(question?.questionId);
+    const questionLabel = normalizeString(question?.questionLabel);
     if (!questionId) {
       throw new Error(`paperSnapshot.questions[${index}].questionId 不能为空`);
     }
+    if (!questionLabel) {
+      throw new Error(`paperSnapshot.questions[${index}].questionLabel 不能为空`);
+    }
     return {
       questionId,
+      questionLabel,
       groupId: normalizeString(question?.groupId),
       entryMode: validateEntryMode(question?.entryMode || ENTRY_MODE_SINGLE),
       groupOrder: Number(question?.groupOrder || 1),
@@ -1133,7 +1268,8 @@ const isSameOptionKeySet = (left, right) => {
 };
 
 const submitPracticePaper = async (event) => {
-  const user = await ensureUserRecord();
+  const user = await ensureUserRecord(event);
+  const collections = getCollections(event);
   const payload = getEventPayload(event);
   const snapshotQuestions = normalizePaperSnapshotQuestions(
     payload?.paperSnapshot?.questions,
@@ -1146,7 +1282,7 @@ const submitPracticePaper = async (event) => {
   let correctCount = 0;
 
   for (const snapshotQuestion of snapshotQuestions) {
-    const latestQuestion = await getQuestionById(snapshotQuestion.questionId);
+    const latestQuestion = await getQuestionById(snapshotQuestion.questionId, collections.questions);
     const answer = answerMap.get(snapshotQuestion.questionId) || {
       questionId: snapshotQuestion.questionId,
       selectedOptionKeys: [],
@@ -1180,6 +1316,7 @@ const submitPracticePaper = async (event) => {
         ? buildPracticeSubmissionQuestionSnapshot(buildPracticeQuestionItem(latestQuestion))
         : {
             questionId: snapshotQuestion.questionId,
+            questionLabel: normalizeString(snapshotQuestion.questionLabel),
             groupId: snapshotQuestion.groupId,
             entryMode: snapshotQuestion.entryMode,
             groupOrder: Number(snapshotQuestion.groupOrder || 1),
@@ -1211,7 +1348,7 @@ const submitPracticePaper = async (event) => {
   const totalCount = snapshotQuestions.length;
   const score = totalCount ? Number(((correctCount / totalCount) * 100).toFixed(2)) : 0;
 
-  await db.collection(PRACTICE_SUBMISSIONS_COLLECTION).add({
+  await db.collection(collections.practiceSubmissions).add({
     data: {
       submissionId,
       openid: user.openid,
@@ -1256,10 +1393,11 @@ const submitPracticePaper = async (event) => {
   });
 };
 
-const listPracticeSubmissions = async () => {
-  const user = await ensureUserRecord();
+const listPracticeSubmissions = async (event) => {
+  const user = await ensureUserRecord(event);
+  const collections = getCollections(event);
   const resp = await db
-    .collection(PRACTICE_SUBMISSIONS_COLLECTION)
+    .collection(collections.practiceSubmissions)
     .where({ openid: user.openid })
     .get();
 
@@ -1283,13 +1421,18 @@ const listPracticeSubmissions = async () => {
 };
 
 const getPracticeSubmissionDetail = async (event) => {
-  const user = await ensureUserRecord();
+  const user = await ensureUserRecord(event);
+  const collections = getCollections(event);
   const submissionId = normalizeString(event?.data?.submissionId || event?.submissionId);
   if (!submissionId) {
     return fail("submissionId 不能为空");
   }
 
-  const record = await getPracticeSubmissionById(submissionId, user.openid);
+  const record = await getPracticeSubmissionById(
+    submissionId,
+    user.openid,
+    collections.practiceSubmissions,
+  );
   if (!record) {
     return fail("做题记录不存在");
   }
@@ -1324,8 +1467,9 @@ const getPracticeSubmissionDetail = async (event) => {
 
 const buildSingleQuestionDocument = async (payload, user, existingQuestion = null) => {
   const mergedPayload = existingQuestion
-    ? {
+      ? {
         questionId: existingQuestion.questionId,
+        questionLabel: payload.questionLabel ?? existingQuestion.questionLabel,
         questionType: payload.questionType ?? existingQuestion.questionType,
         entryMode: payload.entryMode ?? existingQuestion.entryMode,
         sharedStem: payload.sharedStem ?? existingQuestion.sharedStem,
@@ -1351,19 +1495,22 @@ const buildSingleQuestionDocument = async (payload, user, existingQuestion = nul
 };
 
 const createQuestion = async (event) => {
-  const user = await requireAdmin();
+  const user = await requireAdmin(event);
+  const collections = getCollections(event);
   const validated = normalizeSingleQuestionPayload(getEventPayload(event));
+  const storageRoot = resolveStorageRoot(event, validated);
   const now = Date.now();
-  const questionId = await generateQuestionId();
+  const questionId = await generateQuestionId(collections.questions);
   const createdResourceFileIds = [];
 
   try {
-    const materialized = await materializeSingleQuestionResources(validated, questionId);
+    const materialized = await materializeSingleQuestionResources(validated, questionId, storageRoot);
     createdResourceFileIds.push(...materialized.createdFileIds);
 
-    await db.collection(QUESTIONS_COLLECTION).add({
+    await db.collection(collections.questions).add({
       data: {
         questionId,
+        questionLabel: materialized.question.questionLabel,
         groupId: "",
         questionType: materialized.question.questionType,
         entryMode: ENTRY_MODE_SINGLE,
@@ -1391,23 +1538,38 @@ const updateQuestion = async () =>
   fail("题目不支持直接编辑，请删除后重新创建");
 
 const createQuestionGroup = async (event) => {
-  const user = await requireAdmin();
+  const user = await requireAdmin(event);
+  const collections = getCollections(event);
   const payload = getEventPayload(event);
   const sharedStem = normalizeRichStem(payload?.sharedStem, "sharedStem");
   const children = normalizeGroupedChildren(payload?.children, sharedStem);
-  const groupId = await generateGroupId();
+  const storageRoot = resolveStorageRoot(
+    event,
+    {
+      sharedStem,
+      children,
+    },
+    { grouped: true },
+  );
+  const groupId = await generateGroupId(collections.questions);
   const now = Date.now();
   const createdResourceFileIds = [];
 
   try {
-    const materialized = await materializeGroupResources(sharedStem, children, groupId);
+    const materialized = await materializeGroupResources(
+      sharedStem,
+      children,
+      groupId,
+      storageRoot,
+    );
     createdResourceFileIds.push(...materialized.createdFileIds);
 
     for (const child of materialized.children) {
-      const questionId = await generateQuestionId();
-      await db.collection(QUESTIONS_COLLECTION).add({
+      const questionId = await generateQuestionId(collections.questions);
+      await db.collection(collections.questions).add({
         data: {
           questionId,
+          questionLabel: child.questionLabel,
           groupId,
           questionType: child.questionType,
           entryMode: ENTRY_MODE_GROUPED,
@@ -1436,12 +1598,13 @@ const updateQuestionGroup = async () =>
   fail("题组不支持直接编辑，请删除整组后重新上传");
 
 const deleteQuestion = async (event) => {
-  await requireAdmin();
+  await requireAdmin(event);
+  const collections = getCollections(event);
   const questionId = normalizeString(event?.data?.questionId || event?.questionId);
   if (!questionId) {
     return fail("questionId 不能为空");
   }
-  const existingQuestion = await getQuestionById(questionId);
+  const existingQuestion = await getQuestionById(questionId, collections.questions);
   if (!existingQuestion) {
     return fail("题目不存在");
   }
@@ -1452,7 +1615,7 @@ const deleteQuestion = async (event) => {
   const resourceFileIds = extractQuestionResourceFileIds(existingQuestion);
   try {
     await deleteCloudFiles(resourceFileIds);
-    await db.collection(QUESTIONS_COLLECTION).doc(existingQuestion._id).remove();
+    await db.collection(collections.questions).doc(existingQuestion._id).remove();
     return ok({ questionId });
   } catch (error) {
     return fail(error);
@@ -1460,13 +1623,14 @@ const deleteQuestion = async (event) => {
 };
 
 const deleteQuestionGroup = async (event) => {
-  await requireAdmin();
+  await requireAdmin(event);
+  const collections = getCollections(event);
   const groupId = normalizeString(event?.data?.groupId || event?.groupId);
   if (!groupId) {
     return fail("groupId 不能为空");
   }
 
-  const existingQuestions = await getQuestionsByGroupId(groupId);
+  const existingQuestions = await getQuestionsByGroupId(groupId, collections.questions);
   if (!existingQuestions.length) {
     return fail("题组不存在");
   }
@@ -1475,7 +1639,7 @@ const deleteQuestionGroup = async (event) => {
   try {
     await deleteCloudFiles(resourceFileIds);
     for (const question of existingQuestions) {
-      await db.collection(QUESTIONS_COLLECTION).doc(question._id).remove();
+      await db.collection(collections.questions).doc(question._id).remove();
     }
     return ok({ groupId });
   } catch (error) {
@@ -1486,7 +1650,7 @@ const deleteQuestionGroup = async (event) => {
 const dispatch = async (event) => {
   switch (event.type) {
     case "listQuestions":
-      return listQuestions();
+      return listQuestions(event);
     case "listQuestionSummaries":
       return listQuestionSummaries(event);
     case "getQuestionDetail":

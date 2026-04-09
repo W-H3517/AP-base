@@ -13,11 +13,11 @@ const dispatch = async (event) => {
     case "getOpenId":
       return getOpenId();
     case "getCurrentUser":
-      return getCurrentUser();
+      return getCurrentUser(event);
     case "initCollections":
-      return initCollections();
+      return initCollections(event);
     case "getMiniProgramCode":
-      return getMiniProgramCode();
+      return getMiniProgramCode(event);
     default:
       return fail(`不支持的操作类型：${event.type || "undefined"}`);
   }

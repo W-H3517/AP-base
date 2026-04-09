@@ -5,6 +5,33 @@ function getCloudEnv() {
   return app && app.globalData ? app.globalData.env : "";
 }
 
+function normalizeRuntimeDataVersion(value) {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  return normalized === "develop" ? "develop" : "trial";
+}
+
+function normalizeStorageRoot(value) {
+  return normalizeRuntimeDataVersion(value);
+}
+
+function getRuntimeContext() {
+  const app = getApp();
+  return {
+    runtimeEnvVersion:
+      app && typeof app.getRuntimeEnvVersion === "function"
+        ? app.getRuntimeEnvVersion()
+        : "trial",
+    runtimeDataVersion:
+      app && typeof app.getRuntimeDataVersion === "function"
+        ? app.getRuntimeDataVersion()
+        : normalizeRuntimeDataVersion(app && app.globalData ? app.globalData.runtimeDataVersion : ""),
+    storageRoot:
+      app && typeof app.getStorageRoot === "function"
+        ? app.getStorageRoot()
+        : normalizeStorageRoot(app && app.globalData ? app.globalData.storageRoot : ""),
+  };
+}
+
 function getErrorMessage(err) {
   return (err && (err.errMsg || err.message)) || "";
 }
@@ -127,6 +154,7 @@ Page({
         name: USER_CLOUD_FUNCTION_NAME,
         data: {
           type: "getCurrentUser",
+          ...getRuntimeContext(),
         },
       });
 
@@ -200,6 +228,7 @@ Page({
         name: USER_CLOUD_FUNCTION_NAME,
         data: {
           type: "initCollections",
+          ...getRuntimeContext(),
         },
       });
       const result = unwrapCloudResult(resp) || {};

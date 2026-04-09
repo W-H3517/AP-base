@@ -1,5 +1,32 @@
 const QUESTION_CLOUD_FUNCTION_NAME = "questionService";
 
+function normalizeRuntimeDataVersion(value) {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  return normalized === "develop" ? "develop" : "trial";
+}
+
+function normalizeStorageRoot(value) {
+  return normalizeRuntimeDataVersion(value);
+}
+
+function getRuntimeContext() {
+  const app = getApp();
+  return {
+    runtimeEnvVersion:
+      app && typeof app.getRuntimeEnvVersion === "function"
+        ? app.getRuntimeEnvVersion()
+        : "trial",
+    runtimeDataVersion:
+      app && typeof app.getRuntimeDataVersion === "function"
+        ? app.getRuntimeDataVersion()
+        : normalizeRuntimeDataVersion(app && app.globalData ? app.globalData.runtimeDataVersion : ""),
+    storageRoot:
+      app && typeof app.getStorageRoot === "function"
+        ? app.getStorageRoot()
+        : normalizeStorageRoot(app && app.globalData ? app.globalData.storageRoot : ""),
+  };
+}
+
 function normalizeArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -77,6 +104,7 @@ Page({
         name: QUESTION_CLOUD_FUNCTION_NAME,
         data: {
           type: "listPracticeSubmissions",
+          ...getRuntimeContext(),
         },
       });
       const result = unwrapCloudResult(resp);

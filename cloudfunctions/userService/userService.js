@@ -1,9 +1,8 @@
 const cloud = require("wx-server-sdk");
 const { db } = require("./db");
 const {
-  USERS_COLLECTION,
-  QUESTIONS_COLLECTION,
-  PRACTICE_SUBMISSIONS_COLLECTION,
+  normalizeRuntimeDataVersion,
+  resolveCollectionNames,
 } = require("./constants");
 const { ok, normalizeString } = require("./utils");
 
@@ -16,6 +15,11 @@ const normalizeRole = (role) => (role === "admin" ? "admin" : "user");
 
 const getWxContext = () => cloud.getWXContext();
 
+const getRuntimeDataVersion = (event) =>
+  normalizeRuntimeDataVersion(event?.runtimeDataVersion || event?.data?.runtimeDataVersion);
+
+const getCollections = (event) => resolveCollectionNames(getRuntimeDataVersion(event));
+
 const ensureCollection = async (collectionName) => {
   try {
     await db.createCollection(collectionName);
@@ -27,22 +31,24 @@ const ensureCollection = async (collectionName) => {
   }
 };
 
-const ensureCollections = async () => {
+const ensureCollections = async (event) => {
+  const collections = getCollections(event);
   await Promise.all([
-    ensureCollection(USERS_COLLECTION),
-    ensureCollection(QUESTIONS_COLLECTION),
-    ensureCollection(PRACTICE_SUBMISSIONS_COLLECTION),
+    ensureCollection(collections.users),
+    ensureCollection(collections.questions),
+    ensureCollection(collections.practiceSubmissions),
   ]);
 };
 
-const getUserByOpenId = async (openid) => {
+const getUserByOpenId = async (openid, event) => {
   if (!openid) {
     return null;
   }
+  const collections = getCollections(event);
 
   try {
     const resp = await db
-      .collection(USERS_COLLECTION)
+      .collection(collections.users)
       .where({ openid })
       .limit(1)
       .get();
@@ -56,20 +62,21 @@ const getUserByOpenId = async (openid) => {
   }
 };
 
-const ensureUserRecord = async () => {
+const ensureUserRecord = async (event) => {
   const wxContext = getWxContext();
   const openid = wxContext.OPENID;
   if (!openid) {
     throw new Error("无法获取当前用户身份");
   }
+  const collections = getCollections(event);
 
-  await ensureCollections();
+  await ensureCollections(event);
 
-  const existing = await getUserByOpenId(openid);
+  const existing = await getUserByOpenId(openid, event);
   if (existing) {
     const role = normalizeRole(existing.role);
     if (role !== existing.role) {
-      await db.collection(USERS_COLLECTION).doc(existing._id).update({
+      await db.collection(collections.users).doc(existing._id).update({
         data: {
           role,
           updateTime: Date.now(),
@@ -86,7 +93,7 @@ const ensureUserRecord = async () => {
   const now = Date.now();
   const role = ADMIN_OPENIDS.includes(openid) ? "admin" : "user";
   try {
-    await db.collection(USERS_COLLECTION).add({
+    await db.collection(collections.users).add({
       data: {
         openid,
         role,
@@ -101,7 +108,7 @@ const ensureUserRecord = async () => {
     }
   }
 
-  const created = await getUserByOpenId(openid);
+  const created = await getUserByOpenId(openid, event);
   if (!created) {
     throw new Error("用户记录创建失败");
   }
@@ -118,8 +125,8 @@ const getOpenId = async () => {
   });
 };
 
-const getCurrentUser = async () => {
-  const user = await ensureUserRecord();
+const getCurrentUser = async (event) => {
+  const user = await ensureUserRecord(event);
   return ok({
     openid: user.openid,
     role: normalizeRole(user.role),
@@ -132,5 +139,7 @@ module.exports = {
   ensureCollections,
   ensureUserRecord,
   getOpenId,
+  getRuntimeDataVersion,
+  getCollections,
   getCurrentUser,
 };

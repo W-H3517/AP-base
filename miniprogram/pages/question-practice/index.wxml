@@ -84,6 +84,7 @@
   <view class="question-card" wx:if="{{currentQuestion}}">
     <view class="progress-row">
       <view class="progress-badge">{{currentQuestionIndex + 1}} / {{paperQuestionRefs.length}}</view>
+      <view class="question-tag">{{currentQuestion.questionLabel}}</view>
       <view class="question-tag" wx:if="{{currentQuestion.entryMode === 'grouped'}}">题组第 {{currentQuestion.groupOrder}} 题</view>
       <view class="question-tag" wx:if="{{currentQuestion.optionMode === 'grouped_asset'}}">大图选项</view>
       <view class="question-tag" wx:if="{{currentQuestion.optionMode === 'per_option'}}">独立选项</view>

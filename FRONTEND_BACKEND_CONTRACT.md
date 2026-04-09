@@ -171,6 +171,7 @@
 ```json
 {
   "questionId": "q_xxx",
+  "questionLabel": "题号A-01",
   "groupId": "",
   "questionType": "choice",
   "entryMode": "single",
@@ -232,6 +233,13 @@
 
 - `single` 模式下固定为空字符串 `""`
 - `grouped` 模式下同组子题共享同一个 `groupId`
+
+### 4.4.1 `questionLabel`
+
+- 题目展示昵称，前端用于渲染题号
+- 创建时必填
+- 允许重复
+- 不参与搜索、删除定位、缓存 key 或索引
 
 ### 4.4 `groupOrder`
 
@@ -402,6 +410,7 @@
     {
       "entityType": "single",
       "questionId": "q_xxx",
+      "questionLabel": "题号A-01",
       "groupId": "",
       "questionType": "choice",
       "entryMode": "single",
@@ -428,6 +437,7 @@
       "childrenPreview": [
         {
           "questionId": "q_1",
+          "questionLabel": "题号B-02",
           "groupId": "g_xxx",
           "groupOrder": 1,
           "questionType": "choice",
@@ -490,6 +500,7 @@
 ```json
 {
   "type": "createQuestion",
+  "questionLabel": "题号A-01",
   "questionType": "choice",
   "entryMode": "single",
   "sharedStem": {},
@@ -685,6 +696,7 @@
   },
   "children": [
     {
+      "questionLabel": "题号B-02",
       "questionType": "choice",
       "stem": {
         "sourceType": "text",

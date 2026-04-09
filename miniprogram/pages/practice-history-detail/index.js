@@ -1,5 +1,32 @@
 const QUESTION_CLOUD_FUNCTION_NAME = "questionService";
 
+function normalizeRuntimeDataVersion(value) {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  return normalized === "develop" ? "develop" : "trial";
+}
+
+function normalizeStorageRoot(value) {
+  return normalizeRuntimeDataVersion(value);
+}
+
+function getRuntimeContext() {
+  const app = getApp();
+  return {
+    runtimeEnvVersion:
+      app && typeof app.getRuntimeEnvVersion === "function"
+        ? app.getRuntimeEnvVersion()
+        : "trial",
+    runtimeDataVersion:
+      app && typeof app.getRuntimeDataVersion === "function"
+        ? app.getRuntimeDataVersion()
+        : normalizeRuntimeDataVersion(app && app.globalData ? app.globalData.runtimeDataVersion : ""),
+    storageRoot:
+      app && typeof app.getStorageRoot === "function"
+        ? app.getStorageRoot()
+        : normalizeStorageRoot(app && app.globalData ? app.globalData.storageRoot : ""),
+  };
+}
+
 function normalizeString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -79,6 +106,7 @@ function normalizeQuestion(question) {
   const source = isPlainObject(question) ? question : {};
   return {
     questionId: normalizeString(source.questionId),
+    questionLabel: normalizeString(source.questionLabel),
     groupId: normalizeString(source.groupId),
     entryMode: source.entryMode === "grouped" ? "grouped" : "single",
     groupOrder: Number(source.groupOrder || 1),
@@ -174,6 +202,7 @@ Page({
         data: {
           type: "getPracticeSubmissionDetail",
           submissionId: this.submissionId,
+          ...getRuntimeContext(),
         },
       });
       const result = unwrapCloudResult(resp);

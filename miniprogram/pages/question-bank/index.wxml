@@ -64,7 +64,7 @@
       <view wx:if="{{question.entityType === 'single'}}">
         <view class="question-header">
           <view class="summary-main">
-            <view class="question-id">{{question.questionId}}</view>
+            <view class="question-id">{{question.questionLabel}}</view>
             <view class="question-meta">
               <text class="tag">单题</text>
               <text class="tag">{{question.preview.optionModeLabel}}</text>
@@ -106,7 +106,7 @@
         <view class="group-preview-list" wx:if="{{question.isExpanded}}">
           <view class="group-preview-item" wx:for="{{question.childrenPreview}}" wx:key="questionId" wx:for-item="child">
             <view class="group-preview-main">
-              <view class="group-preview-title">第 {{child.groupOrder}} 题 {{child.questionId}}</view>
+              <view class="group-preview-title">{{child.questionLabel}}</view>
               <view class="question-meta">
                 <text class="tag">{{child.preview.optionModeLabel}}</text>
                 <text class="tag" wx:if="{{child.preview.hasStemImage}}">有图</text>
@@ -137,6 +137,7 @@
       </view>
 
       <view wx:if="{{selectedDetailType === 'single'}}">
+        <view class="detail-question-id">题号：{{selectedDetail.questionLabel}}</view>
         <view class="detail-question-id">题目 ID：{{selectedDetail.questionId}}</view>
         <view class="section-title">题干</view>
         <view wx:if="{{selectedDetail.stem.sourceType === 'text'}}" class="stem-text-card">{{selectedDetail.stem.text}}</view>
@@ -180,6 +181,7 @@
         </scroll-view>
 
         <view wx:if="{{selectedDetailActiveChild}}">
+          <view class="detail-question-id detail-question-id-inner">题号：{{selectedDetailActiveChild.questionLabel}}</view>
           <view class="detail-question-id detail-question-id-inner">题目 ID：{{selectedDetailActiveChild.questionId}}</view>
           <view class="section-title">题干</view>
           <view wx:if="{{selectedDetailActiveChild.stem.sourceType === 'text'}}" class="stem-text-card">{{selectedDetailActiveChild.stem.text}}</view>
@@ -221,6 +223,8 @@
 
       <view wx:if="{{editorEntryMode === 'single'}}">
         <view class="detail-question-id" wx:if="{{editorMode === 'edit'}}">题目 ID：{{editorForm.single.questionId}}</view>
+        <view class="section-title">题号昵称</view>
+        <input class="text-input" value="{{editorForm.single.questionLabel}}" bindinput="onQuestionLabelInput" placeholder="请输入题号昵称" />
 
         <view class="section-title">题干</view>
         <view class="segmented">
@@ -314,7 +318,7 @@
         <view class="section-title">子题列表</view>
         <view class="question-card question-card-inner" wx:for="{{editorForm.grouped.children}}" wx:key="questionId" wx:for-item="child" wx:for-index="childIndex">
           <view class="question-header">
-            <view class="question-id">第 {{childIndex + 1}} 题</view>
+            <view class="question-id">{{child.questionLabel || ('第 ' + (childIndex + 1) + ' 题')}}</view>
             <view class="question-actions">
               <button size="mini" bindtap="moveChildQuestionUp" data-child-index="{{childIndex}}">上移</button>
               <button size="mini" bindtap="moveChildQuestionDown" data-child-index="{{childIndex}}">下移</button>
@@ -322,6 +326,8 @@
             </view>
           </view>
           <view class="detail-question-id" wx:if="{{editorMode === 'edit' && child.questionId}}">题目 ID：{{child.questionId}}</view>
+          <view class="section-title">题号昵称</view>
+          <input class="text-input" value="{{child.questionLabel}}" bindinput="onQuestionLabelInput" data-scope="group-child" data-child-index="{{childIndex}}" placeholder="请输入子题题号昵称" />
 
           <view class="section-title">题干</view>
           <view class="segmented">

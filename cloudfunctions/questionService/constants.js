@@ -9,6 +9,18 @@ const ENTRY_MODE_GROUPED = "grouped";
 const OPTION_MODE_PER_OPTION = "per_option";
 const OPTION_MODE_GROUPED_ASSET = "grouped_asset";
 
+const normalizeRuntimeDataVersion = (value) =>
+  String(value || "").trim().toLowerCase() === "develop" ? "develop" : "trial";
+
+const resolveCollectionNames = (runtimeDataVersion) => {
+  const suffix = normalizeRuntimeDataVersion(runtimeDataVersion) === "develop" ? "_dev" : "_trial";
+  return {
+    users: `${USERS_COLLECTION}${suffix}`,
+    questions: `${QUESTIONS_COLLECTION}${suffix}`,
+    practiceSubmissions: `${PRACTICE_SUBMISSIONS_COLLECTION}${suffix}`,
+  };
+};
+
 module.exports = {
   USERS_COLLECTION,
   QUESTIONS_COLLECTION,
@@ -20,4 +32,6 @@ module.exports = {
   ENTRY_MODE_GROUPED,
   OPTION_MODE_PER_OPTION,
   OPTION_MODE_GROUPED_ASSET,
+  normalizeRuntimeDataVersion,
+  resolveCollectionNames,
 };

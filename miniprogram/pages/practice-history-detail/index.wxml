@@ -40,6 +40,7 @@
   <view class="question-card" wx:if="{{currentQuestion}}">
     <view class="progress-row">
       <view class="progress-badge">{{currentQuestionIndex + 1}} / {{questions.length}}</view>
+      <view class="question-tag">{{currentQuestion.questionLabel}}</view>
       <view class="question-tag" wx:if="{{currentQuestion.entryMode === 'grouped'}}">题组第 {{currentQuestion.groupOrder}} 题</view>
       <view class="question-status-tag question-status-tag-correct" wx:if="{{currentQuestion.reviewResult && currentQuestion.reviewResult.isCorrect}}">答对</view>
       <view class="question-status-tag question-status-tag-wrong" wx:if="{{currentQuestion.reviewResult && !currentQuestion.reviewResult.isCorrect}}">答错</view>

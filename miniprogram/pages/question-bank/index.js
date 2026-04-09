@@ -11,6 +11,43 @@ function getCloudEnv() {
   return app && app.globalData ? app.globalData.env : "";
 }
 
+function normalizeStorageRoot(value) {
+  const normalized = normalizeString(value);
+  if (normalized === "develop" || normalized === "trial") {
+    return normalized;
+  }
+  return "trial";
+}
+
+function normalizeRuntimeDataVersion(value) {
+  return normalizeStorageRoot(value);
+}
+
+function getRuntimeStorageInfo() {
+  const app = getApp();
+  const runtimeEnvVersion =
+    app && typeof app.getRuntimeEnvVersion === "function"
+      ? app.getRuntimeEnvVersion()
+      : normalizeString(app && app.globalData ? app.globalData.runtimeEnvVersion : "");
+  const runtimeDataVersion =
+    app && typeof app.getRuntimeDataVersion === "function"
+      ? app.getRuntimeDataVersion()
+      : normalizeRuntimeDataVersion(app && app.globalData ? app.globalData.runtimeDataVersion : "");
+  const storageRoot =
+    app && typeof app.getStorageRoot === "function"
+      ? app.getStorageRoot()
+      : normalizeStorageRoot(app && app.globalData ? app.globalData.storageRoot : "");
+  return {
+    runtimeEnvVersion: normalizeString(runtimeEnvVersion) || "trial",
+    runtimeDataVersion: normalizeRuntimeDataVersion(runtimeDataVersion),
+    storageRoot: normalizeStorageRoot(storageRoot),
+  };
+}
+
+function appendRuntimeStorageData(data) {
+  return assignObject({}, data || {}, getRuntimeStorageInfo());
+}
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -83,6 +120,7 @@ function createDefaultOptions() {
 function createSingleQuestionForm() {
   return {
     questionId: "",
+    questionLabel: "",
     questionType: QUESTION_TYPE,
     stem: createEmptyStem(),
     optionMode: "per_option",
@@ -357,6 +395,7 @@ function normalizeGroupChildPreview(child) {
   const source = isPlainObject(child) ? child : {};
   return {
     questionId: normalizeString(source.questionId),
+    questionLabel: normalizeString(source.questionLabel),
     groupId: normalizeString(source.groupId),
     groupOrder: Number(source.groupOrder || 1),
     questionType: normalizeString(source.questionType) || QUESTION_TYPE,
@@ -376,6 +415,7 @@ function normalizeSingleSummary(entity) {
     summaryId: questionId,
     entityType: "single",
     questionId,
+    questionLabel: normalizeString(source.questionLabel),
     groupId: "",
     questionType: normalizeString(source.questionType) || QUESTION_TYPE,
     entryMode: "single",
@@ -459,7 +499,7 @@ function buildDetailChildTabs(children, activeQuestionId) {
   const normalizedActiveId = normalizeString(activeQuestionId);
   return normalizeArray(children).map((child) => ({
     questionId: child.questionId,
-    label: `第 ${child.groupOrder} 题`,
+    label: normalizeString(child.questionLabel) || `第 ${child.groupOrder} 题`,
     isActive: child.questionId === normalizedActiveId,
   }));
 }
@@ -498,6 +538,7 @@ function normalizeQuestionItem(question, isAdmin) {
   const normalized = {
     _id: source._id || "",
     questionId: normalizeString(source.questionId),
+    questionLabel: normalizeString(source.questionLabel),
     groupId: normalizeString(source.groupId),
     groupOrder: Number(source.groupOrder || 1),
     entryMode,
@@ -556,6 +597,7 @@ function normalizeEditorSingleForm(question) {
   const normalized = normalizeQuestionItem(question, true);
   return {
     questionId: normalized.questionId || "",
+    questionLabel: normalized.questionLabel || "",
     questionType: QUESTION_TYPE,
     entryMode: "single",
     groupId: "",
@@ -691,7 +733,7 @@ Page({
   async callQuestionFunction(type, data) {
     const resp = await wx.cloud.callFunction({
       name: getCloudFunctionNameByType(type),
-      data: assignObject({ type: type }, data || {}),
+      data: assignObject({ type: type }, appendRuntimeStorageData(data)),
     });
     return unwrapCloudResult(resp);
   },
@@ -1360,6 +1402,20 @@ Page({
     });
   },
 
+  onQuestionLabelInput(e) {
+    const scope = this.getEditorScopeFromEvent(e);
+    const childIndex = this.getChildIndexFromEvent(e);
+    const value = e.detail.value || "";
+
+    this.setEditorForm((form) => {
+      const target = getTargetQuestion(form, scope, childIndex);
+      if (!target) {
+        return;
+      }
+      target.questionLabel = value;
+    });
+  },
+
   async uploadStemImages(e) {
     const scope = this.getEditorScopeFromEvent(e);
     const childIndex = this.getChildIndexFromEvent(e);
@@ -1762,6 +1818,7 @@ Page({
   },
 
   async uploadImagesToCloud(prefix) {
+    const runtimeStorageInfo = getRuntimeStorageInfo();
     return new Promise((resolve, reject) => {
       wx.chooseMedia({
         count: 9,
@@ -1773,7 +1830,7 @@ Page({
             const uploads = await Promise.all(
               files.map((file, index) =>
                 wx.cloud.uploadFile({
-                  cloudPath: `temp/${prefix}/${Date.now()}-${index}.png`,
+                  cloudPath: `${runtimeStorageInfo.storageRoot}/temp/${prefix}/${Date.now()}-${index}.png`,
                   filePath: file.tempFilePath,
                 })
               )
@@ -1804,6 +1861,10 @@ Page({
 
   validateSingleQuestionForm(questionForm, label = "题目") {
     const source = isPlainObject(questionForm) ? questionForm : createSingleQuestionForm();
+    const questionLabel = normalizeString(source.questionLabel);
+    if (!questionLabel) {
+      return { valid: false, message: `${label}题号昵称不能为空。` };
+    }
     if (normalizeString(source.questionType) !== QUESTION_TYPE) {
       return { valid: false, message: `${label}类型必须是 choice。` };
     }
@@ -1860,6 +1921,7 @@ Page({
         valid: true,
         data: {
           questionType: QUESTION_TYPE,
+          questionLabel,
           entryMode: "single",
           groupId: "",
           groupOrder: 1,
@@ -1910,6 +1972,7 @@ Page({
       valid: true,
       data: {
         questionType: QUESTION_TYPE,
+        questionLabel,
         entryMode: "single",
         groupId: "",
         groupOrder: 1,

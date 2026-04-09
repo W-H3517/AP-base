@@ -2,9 +2,9 @@ const QUESTION_CLOUD_FUNCTION_NAME = "questionService";
 const USER_CLOUD_FUNCTION_NAME = "userService";
 const STEM_IMAGE_BASE_HEIGHT_RPX = 320;
 const STEM_IMAGE_DEFAULT_SCALE = 1.4;
-const STEM_IMAGE_MIN_SCALE = 0.6;
+const STEM_IMAGE_MIN_SCALE = 0.1;
 const STEM_IMAGE_MAX_SCALE = 2.2;
-const STEM_IMAGE_SCALE_STEP = 0.2;
+const STEM_IMAGE_SCALE_STEP = 0.1;
 
 function getNavigationMetrics() {
   const systemInfo =

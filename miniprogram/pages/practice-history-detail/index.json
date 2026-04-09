@@ -3,6 +3,7 @@
   "backgroundColor": "#F4F7FB",
   "backgroundTextStyle": "light",
   "usingComponents": {
-    "cloud-tip-modal": "/components/cloudTipModal/index"
+    "cloud-tip-modal": "/components/cloudTipModal/index",
+    "mp-html": "mp-html"
   }
 }

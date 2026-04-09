@@ -5,6 +5,14 @@ const STEM_IMAGE_DEFAULT_SCALE = 1.4;
 const STEM_IMAGE_MIN_SCALE = 0.1;
 const STEM_IMAGE_MAX_SCALE = 2.2;
 const STEM_IMAGE_SCALE_STEP = 0.1;
+const {
+  OPTION_MARKDOWN_CONTAINER_STYLE,
+  OPTION_MARKDOWN_TAG_STYLE,
+  STEM_MARKDOWN_CONTAINER_STYLE,
+  STEM_MARKDOWN_TAG_STYLE,
+  attachRenderedOptionItem,
+  attachRenderedRichContent,
+} = require("../../utils/markdown");
 
 function getNavigationMetrics() {
   const systemInfo =
@@ -97,22 +105,22 @@ function normalizeRichContent(content) {
   const imageFileIds = normalizeArray(source.imageFileIds)
     .map((item) => normalizeString(item))
     .filter(Boolean);
-  return {
+  return attachRenderedRichContent({
     sourceType: sourceType === "image" && imageFileIds.length ? "image" : "text",
     text: sourceType === "text" ? normalizeString(source.text) : "",
     imageFileIds,
-  };
+  });
 }
 
 function normalizeOptionItem(option) {
   const source = isPlainObject(option) ? option : {};
   const sourceType = source.sourceType === "image" ? "image" : "text";
-  return {
+  return attachRenderedOptionItem({
     key: normalizeString(source.key).toUpperCase(),
     sourceType,
     text: sourceType === "text" ? normalizeString(source.text) : "",
     imageFileId: sourceType === "image" ? normalizeString(source.imageFileId) : "",
-  };
+  });
 }
 
 function normalizeOptions(options) {
@@ -197,6 +205,10 @@ Page({
     stemImageScale: STEM_IMAGE_DEFAULT_SCALE,
     stemImageScalePercent: Math.round(STEM_IMAGE_DEFAULT_SCALE * 100),
     stemImageHeightRpx: Math.round(STEM_IMAGE_BASE_HEIGHT_RPX * STEM_IMAGE_DEFAULT_SCALE),
+    stemMarkdownContainerStyle: STEM_MARKDOWN_CONTAINER_STYLE,
+    stemMarkdownTagStyle: STEM_MARKDOWN_TAG_STYLE,
+    optionMarkdownContainerStyle: OPTION_MARKDOWN_CONTAINER_STYLE,
+    optionMarkdownTagStyle: OPTION_MARKDOWN_TAG_STYLE,
   },
 
   onLoad(options) {
@@ -396,6 +408,40 @@ Page({
       current: src,
       urls: urls.length ? urls : [src],
     });
+  },
+
+  onRichTextError(e) {
+    const scope = normalizeString(e.currentTarget.dataset.scope);
+    const optionKey = normalizeString(e.currentTarget.dataset.optionKey).toUpperCase();
+    const currentQuestion = this.data.currentQuestion;
+    if (!currentQuestion) {
+      return;
+    }
+
+    if (scope === "sharedStem" && currentQuestion.sharedStem && !currentQuestion.sharedStem.renderAsPlainText) {
+      this.setData({
+        "currentQuestion.sharedStem.renderAsPlainText": true,
+      });
+      return;
+    }
+
+    if (scope === "stem" && currentQuestion.stem && !currentQuestion.stem.renderAsPlainText) {
+      this.setData({
+        "currentQuestion.stem.renderAsPlainText": true,
+      });
+      return;
+    }
+
+    if (scope === "option" && optionKey) {
+      const optionIndex = normalizeArray(currentQuestion.options && currentQuestion.options.items).findIndex(
+        (item) => item.key === optionKey
+      );
+      if (optionIndex !== -1 && !currentQuestion.options.items[optionIndex].renderAsPlainText) {
+        this.setData({
+          [`currentQuestion.options.items[${optionIndex}].renderAsPlainText`]: true,
+        });
+      }
+    }
   },
 
   updateStemImageScale(nextScale) {

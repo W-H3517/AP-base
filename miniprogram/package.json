@@ -1,0 +1,9 @@
+{
+  "name": "ap-miniprogram",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "katex": "^0.16.9",
+    "mp-html": "^2.5.2"
+  }
+}

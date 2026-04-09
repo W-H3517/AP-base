@@ -4,6 +4,7 @@
   "backgroundTextStyle": "light",
   "enablePullDownRefresh": true,
   "usingComponents": {
-    "cloud-tip-modal": "/components/cloudTipModal/index"
+    "cloud-tip-modal": "/components/cloudTipModal/index",
+    "mp-html": "mp-html"
   }
 }

@@ -72,7 +72,18 @@
 
       <view class="section-title" wx:if="{{currentQuestion.sharedStemVisible}}">公共题干</view>
       <view class="stem-card" wx:if="{{currentQuestion.sharedStemVisible && currentQuestion.sharedStem.sourceType === 'text'}}">
-        {{currentQuestion.sharedStem.text}}
+        <mp-html
+          wx:if="{{!currentQuestion.sharedStem.renderAsPlainText}}"
+          content="{{currentQuestion.sharedStem.renderedContent}}"
+          markdown="{{true}}"
+          container-style="{{stemMarkdownContainerStyle}}"
+          tag-style="{{stemMarkdownTagStyle}}"
+          preview-img="{{false}}"
+          selectable="{{true}}"
+          data-scope="sharedStem"
+          binderror="onRichTextError"
+        />
+        <view wx:else>{{currentQuestion.sharedStem.text}}</view>
       </view>
       <view class="image-list" wx:if="{{currentQuestion.sharedStemVisible && currentQuestion.sharedStem.sourceType === 'image'}}">
         <view class="stem-image-toolbar">
@@ -91,7 +102,18 @@
 
       <view class="section-title">题目</view>
       <view class="stem-card" wx:if="{{currentQuestion.stem.sourceType === 'text'}}">
-        {{currentQuestion.stem.text}}
+        <mp-html
+          wx:if="{{!currentQuestion.stem.renderAsPlainText}}"
+          content="{{currentQuestion.stem.renderedContent}}"
+          markdown="{{true}}"
+          container-style="{{stemMarkdownContainerStyle}}"
+          tag-style="{{stemMarkdownTagStyle}}"
+          preview-img="{{false}}"
+          selectable="{{true}}"
+          data-scope="stem"
+          binderror="onRichTextError"
+        />
+        <view wx:else>{{currentQuestion.stem.text}}</view>
       </view>
       <view class="image-list" wx:if="{{currentQuestion.stem.sourceType === 'image'}}">
         <view class="stem-image-toolbar">
@@ -120,7 +142,21 @@
             <view class="option-key">{{item.key}}</view>
             <view class="option-state">{{item.selectionLabel}}</view>
           </view>
-          <view wx:if="{{item.sourceType === 'text'}}" class="option-text">{{item.text}}</view>
+          <view wx:if="{{item.sourceType === 'text'}}" class="option-text">
+            <mp-html
+              wx:if="{{!item.renderAsPlainText}}"
+              content="{{item.renderedContent}}"
+              markdown="{{true}}"
+              container-style="{{optionMarkdownContainerStyle}}"
+              tag-style="{{optionMarkdownTagStyle}}"
+              preview-img="{{false}}"
+              selectable="{{true}}"
+              data-scope="option"
+              data-option-key="{{item.key}}"
+              binderror="onRichTextError"
+            />
+            <view wx:else>{{item.text}}</view>
+          </view>
           <image wx:if="{{item.sourceType === 'image' && item.imageFileId}}" class="option-image" mode="widthFix" src="{{item.imageFileId}}" bindtap="previewImage" data-src="{{item.imageFileId}}"></image>
         </view>
       </view>

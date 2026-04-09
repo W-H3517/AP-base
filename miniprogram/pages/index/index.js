@@ -32,6 +32,27 @@ function getRuntimeContext() {
   };
 }
 
+function getNavigationMetrics() {
+  const systemInfo =
+    typeof wx.getWindowInfo === "function" ? wx.getWindowInfo() : wx.getSystemInfoSync();
+  const menuButtonRect =
+    typeof wx.getMenuButtonBoundingClientRect === "function"
+      ? wx.getMenuButtonBoundingClientRect()
+      : null;
+  const statusBarHeight = systemInfo.statusBarHeight || 20;
+  const capsuleWidth = menuButtonRect ? systemInfo.windowWidth - menuButtonRect.left + 12 : 196;
+  const navBarHeight = menuButtonRect
+    ? menuButtonRect.height + (menuButtonRect.top - statusBarHeight) * 2
+    : 44;
+
+  return {
+    statusBarHeight,
+    navBarHeight,
+    totalHeight: statusBarHeight + navBarHeight,
+    capsuleWidth,
+  };
+}
+
 function getErrorMessage(err) {
   return (err && (err.errMsg || err.message)) || "";
 }
@@ -63,36 +84,7 @@ Page({
       openid: "",
       role: "",
     },
-    entranceList: [
-      {
-        title: "题库入口",
-        tip: "先同步当前用户，再进入在线答题、做题记录或管理员管理页",
-        showItem: true,
-        item: [
-          {
-            type: "getCurrentUser",
-            title: "刷新当前用户",
-          },
-          {
-            type: "initCollections",
-            title: "初始化集合",
-          },
-          {
-            type: "question-browser",
-            title: "在线答题",
-          },
-          {
-            type: "practice-history",
-            title: "做题记录",
-          },
-          {
-            type: "question-admin",
-            title: "题目管理",
-            adminOnly: true,
-          },
-        ],
-      },
-    ],
+    navMetrics: getNavigationMetrics(),
   },
 
   onLoad() {
@@ -116,16 +108,6 @@ Page({
   hideCloudTip() {
     this.setData({
       showTip: false,
-    });
-  },
-
-  hideGroup(e) {
-    const index = e.currentTarget.dataset.index;
-    const entranceList = this.data.entranceList.slice();
-    const selectedItem = entranceList[index];
-    selectedItem.showItem = !selectedItem.showItem;
-    this.setData({
-      entranceList,
     });
   },
 
@@ -289,28 +271,5 @@ Page({
     wx.navigateTo({
       url: "/pages/practice-history/index",
     });
-  },
-
-  jumpPage(e) {
-    const type = e.currentTarget.dataset.type;
-    if (type === "getCurrentUser") {
-      this.getCurrentUser();
-      return;
-    }
-    if (type === "initCollections") {
-      this.initCollections();
-      return;
-    }
-    if (type === "question-browser") {
-      this.openQuestionBrowser();
-      return;
-    }
-    if (type === "practice-history") {
-      this.openPracticeHistory();
-      return;
-    }
-    if (type === "question-admin") {
-      this.openQuestionAdmin();
-    }
   },
 });

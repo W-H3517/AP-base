@@ -1,98 +1,42 @@
-<view class="container">
-  <view class="title">题库与权限</view>
-  <view class="top_tip">
-    页面会先同步当前用户身份。普通用户可进入在线答题和做题记录，管理员额外看到题目管理入口。
+<view class="page-shell">
+  <view class="custom-nav" style="padding-top: {{navMetrics.statusBarHeight}}px;">
+    <view class="custom-nav-inner">
+      <view class="custom-nav-main">
+        <view class="custom-nav-caption">首页</view>
+      </view>
+      <view class="custom-nav-space" style="width: {{navMetrics.capsuleWidth}}px;"></view>
+    </view>
   </view>
 
-  <view class="hero-card">
-    <view class="hero-title-row">
-      <view>
-        <view class="title">题库与权限</view>
-        <view class="top_tip hero-tip">
-          在这里进入在线答题、回顾历史成绩，并管理题库内容。
+  <view class="page-body" style="padding-top: {{navMetrics.totalHeight + 20}}px;">
+    <view class="hero-card">
+      <view class="hero-top">
+        <view class="hero-copy">
+          <view class="hero-title">AP题库答题系统</view>
         </view>
       </view>
-      <view class="hero-role">{{currentUser.role ? currentUser.role : '加载中'}}</view>
-    </view>
-    <view class="hero-actions">
-      <view class="action-card action-card-primary" bindtap="openQuestionBrowser">
-        <view class="action-card-title">在线答题</view>
-        <view class="action-card-tip">逐题作答，交卷后立即进入回顾模式</view>
-      </view>
-      <view class="action-card" bindtap="openPracticeHistory">
-        <view class="action-card-title">做题记录</view>
-        <view class="action-card-tip">查看历史提交时间、分数摘要和逐题详情</view>
-      </view>
-      <view class="action-card action-card-admin" wx:if="{{isAdmin}}" bindtap="openQuestionAdmin">
-        <view class="action-card-title">题目管理</view>
-        <view class="action-card-tip">管理员维护题目、题组与资源内容</view>
-      </view>
-    </view>
-  </view>
 
-  <view class="code_box code_box-elevated">
-    <view class="code_box_title">当前用户</view>
-    <view class="code_box_record">
-      <view class="code_box_record_title" style="width: 30%;">身份</view>
-      <view class="code_box_record_title" style="width: 30%;">状态</view>
-      <view class="code_box_record_title" style="width: 40%;">操作</view>
-    </view>
-    <view class="line"></view>
-    <view class="code_box_record">
-      <view class="code_box_record_detail" style="width: 30%;">
-        {{currentUser.role ? currentUser.role : '加载中'}}
-      </view>
-      <view class="code_box_record_detail" style="width: 30%;">
-        {{userLoaded ? '已同步' : '未同步'}}
-      </view>
-      <view class="code_box_record_detail" style="width: 40%;">
-        <button style="font-size: 12px" bindtap="getCurrentUser" loading="{{loadingUser}}">刷新</button>
-      </view>
-    </view>
-    <view class="top_tip" style="word-break: break-all;">
-      OpenID：{{currentUser.openid ? currentUser.openid : '待获取'}}
-    </view>
-  </view>
-
-  <view class="btn-full" bindtap="initCollections" loading="{{loadingAction}}">
-    初始化集合
-  </view>
-  <view class="btn-full btn-secondary" bindtap="openPracticeHistory">
-    做题记录
-  </view>
-  <view class="btn-full" wx:if="{{isAdmin}}" bindtap="openQuestionAdmin">
-    题目管理
-  </view>
-  <view class="button_clear" wx:if="{{userLoaded && !isAdmin}}">
-    当前身份为普通用户，可使用在线答题和做题记录功能
-  </view>
-
-  <view class="power">
-    <view class="power_info" data-index="0" bindtap="hideGroup">
-        <view class="power_info_text">
-          <view class="power_info_text_title">题库入口</view>
-        <view class="power_info_text_tip">包含用户同步、集合初始化、在线答题、做题记录和题目管理入口</view>
+      <view class="action-stack">
+        <view class="action-card action-card-primary" bindtap="openQuestionBrowser">
+          <view class="action-card-title">在线答题</view>
+          <view class="action-card-tip">逐题作答，交卷后立即进入回顾模式</view>
         </view>
-      <image
-        wx:if="{{!entranceList[0].showItem}}"
-        class="power_info_more"
-        src="../../images/arrow.svg"
-      ></image>
-      <image
-        wx:if="{{entranceList[0].showItem}}"
-        class="power_info_less"
-        src="../../images/arrow.svg"
-      ></image>
-    </view>
-    <view wx:if="{{entranceList[0].showItem}}">
-      <view wx:key="title" wx:for="{{entranceList[0].item}}" wx:for-item="item">
-        <view wx:if="{{!item.adminOnly || isAdmin}}">
-          <view class="line"></view>
-          <view class="power_item" bindtap="jumpPage" data-type="{{item.type}}">
-            <view class="power_item_title">{{item.title}}</view>
-            <image class="power_item_icon" src="../../images/arrow.svg"></image>
-          </view>
+        <view class="action-card action-card-secondary" bindtap="openPracticeHistory">
+          <view class="action-card-title">做题记录</view>
+          <view class="action-card-tip">查看历史提交时间、分数摘要和逐题详情</view>
         </view>
+      </view>
+    </view>
+
+    <view class="refresh-card">
+      <button class="ghost-btn ghost-btn-full" bindtap="getCurrentUser" loading="{{loadingUser}}">刷新</button>
+    </view>
+
+    <view class="admin-card" wx:if="{{isAdmin}}">
+      <view class="section-title">管理入口</view>
+      <view class="admin-actions">
+        <view class="mini-action" bindtap="openQuestionAdmin">题目管理</view>
+        <view class="mini-action mini-action-plain" bindtap="initCollections">初始化集合</view>
       </view>
     </view>
   </view>

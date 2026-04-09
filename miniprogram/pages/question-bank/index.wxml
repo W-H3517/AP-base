@@ -224,14 +224,14 @@
       <view wx:if="{{editorEntryMode === 'single'}}">
         <view class="detail-question-id" wx:if="{{editorMode === 'edit'}}">题目 ID：{{editorForm.single.questionId}}</view>
         <view class="section-title">题号昵称</view>
-        <input class="text-input" value="{{editorForm.single.questionLabel}}" bindinput="onQuestionLabelInput" placeholder="请输入题号昵称" />
+        <input class="text-input" value="{{editorForm.single.questionLabel}}" bindinput="onQuestionLabelInput" placeholder="请输入题号昵称" maxlength="-1" />
 
         <view class="section-title">题干</view>
         <view class="segmented">
           <view class="segmented-item {{editorForm.single.stem.sourceType === 'text' ? 'segmented-item-active' : ''}}" bindtap="switchStemSourceType" data-type="text">文本</view>
           <view class="segmented-item {{editorForm.single.stem.sourceType === 'image' ? 'segmented-item-active' : ''}}" bindtap="switchStemSourceType" data-type="image">图片</view>
         </view>
-        <textarea wx:if="{{editorForm.single.stem.sourceType === 'text'}}" class="text-area" value="{{editorForm.single.stem.text}}" bindinput="onStemTextInput" placeholder="请输入题干文本" auto-height></textarea>
+        <textarea wx:if="{{editorForm.single.stem.sourceType === 'text'}}" class="text-area" value="{{editorForm.single.stem.text}}" bindinput="onStemTextInput" placeholder="请输入题干文本" auto-height maxlength="-1"></textarea>
         <view wx:if="{{editorForm.single.stem.sourceType === 'image'}}">
           <view class="btn-full secondary-btn" bindtap="uploadStemImages">上传题干图片</view>
           <view class="content-image-list">
@@ -251,14 +251,14 @@
         <view wx:if="{{editorForm.single.optionMode === 'per_option'}}">
           <view class="option-editor" wx:for="{{editorForm.single.options.items}}" wx:key="key" wx:for-item="option" wx:for-index="index">
             <view class="option-editor-top">
-              <input class="option-key-input" value="{{option.key}}" data-index="{{index}}" bindinput="onOptionKeyInput" maxlength="6" />
+              <input class="option-key-input" value="{{option.key}}" data-index="{{index}}" bindinput="onOptionKeyInput" maxlength="100" />
               <view class="segmented segmented-small">
                 <view class="segmented-item segmented-item-small {{option.sourceType === 'text' ? 'segmented-item-active' : ''}}" bindtap="switchOptionSourceType" data-index="{{index}}" data-type="text">文本</view>
                 <view class="segmented-item segmented-item-small {{option.sourceType === 'image' ? 'segmented-item-active' : ''}}" bindtap="switchOptionSourceType" data-index="{{index}}" data-type="image">图片</view>
               </view>
               <button size="mini" type="warn" bindtap="removeOption" data-index="{{index}}">删除</button>
             </view>
-            <textarea wx:if="{{option.sourceType === 'text'}}" class="text-area text-area-small" value="{{option.text}}" bindinput="onOptionTextInput" data-index="{{index}}" placeholder="请输入选项 {{option.key}} 文本" auto-height></textarea>
+            <textarea wx:if="{{option.sourceType === 'text'}}" class="text-area text-area-small" value="{{option.text}}" bindinput="onOptionTextInput" data-index="{{index}}" placeholder="请输入选项 {{option.key}} 文本" auto-height maxlength="-1"></textarea>
             <view wx:if="{{option.sourceType === 'image'}}">
               <view class="btn-full secondary-btn" bindtap="uploadOptionImage" data-index="{{index}}">上传选项图片</view>
               <image wx:if="{{option.imageFileId}}" class="option-image clickable-image" mode="widthFix" src="{{option.imageFileId}}" bindtap="previewSingleImage" data-src="{{option.imageFileId}}"></image>
@@ -281,7 +281,7 @@
           </view>
           <view class="grouped-key-list">
             <view class="grouped-key-item" wx:for="{{editorForm.single.options.keys}}" wx:key="*this" wx:for-item="key" wx:for-index="keyIndex">
-              <input class="option-key-input" value="{{key}}" data-index="{{keyIndex}}" bindinput="onOptionKeyInput" maxlength="6" />
+              <input class="option-key-input" value="{{key}}" data-index="{{keyIndex}}" bindinput="onOptionKeyInput" maxlength="100" />
               <button size="mini" type="warn" bindtap="removeOption" data-index="{{keyIndex}}">删除</button>
             </view>
           </view>
@@ -304,7 +304,7 @@
           <view class="segmented-item {{editorForm.grouped.sharedStem.sourceType === 'text' ? 'segmented-item-active' : ''}}" bindtap="switchStemSourceType" data-scope="group-shared" data-type="text">文本</view>
           <view class="segmented-item {{editorForm.grouped.sharedStem.sourceType === 'image' ? 'segmented-item-active' : ''}}" bindtap="switchStemSourceType" data-scope="group-shared" data-type="image">图片</view>
         </view>
-        <textarea wx:if="{{editorForm.grouped.sharedStem.sourceType === 'text'}}" class="text-area" value="{{editorForm.grouped.sharedStem.text}}" bindinput="onStemTextInput" data-scope="group-shared" placeholder="请输入公共题干文本" auto-height></textarea>
+        <textarea wx:if="{{editorForm.grouped.sharedStem.sourceType === 'text'}}" class="text-area" value="{{editorForm.grouped.sharedStem.text}}" bindinput="onStemTextInput" data-scope="group-shared" placeholder="请输入公共题干文本" auto-height maxlength="-1"></textarea>
         <view wx:if="{{editorForm.grouped.sharedStem.sourceType === 'image'}}">
           <view class="btn-full secondary-btn" bindtap="uploadStemImages" data-scope="group-shared">上传公共题干图片</view>
           <view class="content-image-list">
@@ -327,14 +327,14 @@
           </view>
           <view class="detail-question-id" wx:if="{{editorMode === 'edit' && child.questionId}}">题目 ID：{{child.questionId}}</view>
           <view class="section-title">题号昵称</view>
-          <input class="text-input" value="{{child.questionLabel}}" bindinput="onQuestionLabelInput" data-scope="group-child" data-child-index="{{childIndex}}" placeholder="请输入子题题号昵称" />
+          <input class="text-input" value="{{child.questionLabel}}" bindinput="onQuestionLabelInput" data-scope="group-child" data-child-index="{{childIndex}}" placeholder="请输入子题题号昵称" maxlength="-1" />
 
           <view class="section-title">题干</view>
           <view class="segmented">
             <view class="segmented-item {{child.stem.sourceType === 'text' ? 'segmented-item-active' : ''}}" bindtap="switchStemSourceType" data-scope="group-child" data-child-index="{{childIndex}}" data-type="text">文本</view>
             <view class="segmented-item {{child.stem.sourceType === 'image' ? 'segmented-item-active' : ''}}" bindtap="switchStemSourceType" data-scope="group-child" data-child-index="{{childIndex}}" data-type="image">图片</view>
           </view>
-          <textarea wx:if="{{child.stem.sourceType === 'text'}}" class="text-area" value="{{child.stem.text}}" bindinput="onStemTextInput" data-scope="group-child" data-child-index="{{childIndex}}" placeholder="请输入子题题干文本" auto-height></textarea>
+          <textarea wx:if="{{child.stem.sourceType === 'text'}}" class="text-area" value="{{child.stem.text}}" bindinput="onStemTextInput" data-scope="group-child" data-child-index="{{childIndex}}" placeholder="请输入子题题干文本" auto-height maxlength="-1"></textarea>
           <view wx:if="{{child.stem.sourceType === 'image'}}">
             <view class="btn-full secondary-btn" bindtap="uploadStemImages" data-scope="group-child" data-child-index="{{childIndex}}">上传子题图片</view>
             <view class="content-image-list">
@@ -354,14 +354,14 @@
           <view wx:if="{{child.optionMode === 'per_option'}}">
             <view class="option-editor" wx:for="{{child.options.items}}" wx:key="key" wx:for-item="option" wx:for-index="optIndex">
               <view class="option-editor-top">
-                <input class="option-key-input" value="{{option.key}}" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{optIndex}}" bindinput="onOptionKeyInput" maxlength="6" />
+                <input class="option-key-input" value="{{option.key}}" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{optIndex}}" bindinput="onOptionKeyInput" maxlength="100" />
                 <view class="segmented segmented-small">
                   <view class="segmented-item segmented-item-small {{option.sourceType === 'text' ? 'segmented-item-active' : ''}}" bindtap="switchOptionSourceType" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{optIndex}}" data-type="text">文本</view>
                   <view class="segmented-item segmented-item-small {{option.sourceType === 'image' ? 'segmented-item-active' : ''}}" bindtap="switchOptionSourceType" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{optIndex}}" data-type="image">图片</view>
                 </view>
                 <button size="mini" type="warn" bindtap="removeOption" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{optIndex}}">删除</button>
               </view>
-              <textarea wx:if="{{option.sourceType === 'text'}}" class="text-area text-area-small" value="{{option.text}}" bindinput="onOptionTextInput" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{optIndex}}" placeholder="请输入选项 {{option.key}} 文本" auto-height></textarea>
+              <textarea wx:if="{{option.sourceType === 'text'}}" class="text-area text-area-small" value="{{option.text}}" bindinput="onOptionTextInput" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{optIndex}}" placeholder="请输入选项 {{option.key}} 文本" auto-height maxlength="-1"></textarea>
               <view wx:if="{{option.sourceType === 'image'}}">
                 <view class="btn-full secondary-btn" bindtap="uploadOptionImage" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{optIndex}}">上传选项图片</view>
                 <image wx:if="{{option.imageFileId}}" class="option-image clickable-image" mode="widthFix" src="{{option.imageFileId}}" bindtap="previewSingleImage" data-src="{{option.imageFileId}}"></image>
@@ -384,7 +384,7 @@
             </view>
             <view class="grouped-key-list">
               <view class="grouped-key-item" wx:for="{{child.options.keys}}" wx:key="*this" wx:for-item="key" wx:for-index="keyIndex">
-                <input class="option-key-input" value="{{key}}" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{keyIndex}}" bindinput="onOptionKeyInput" maxlength="6" />
+                <input class="option-key-input" value="{{key}}" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{keyIndex}}" bindinput="onOptionKeyInput" maxlength="100" />
                 <button size="mini" type="warn" bindtap="removeOption" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{keyIndex}}">删除</button>
               </view>
             </view>

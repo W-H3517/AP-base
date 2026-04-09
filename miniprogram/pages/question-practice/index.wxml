@@ -132,7 +132,18 @@
         {{currentQuestion.sharedStem.text}}
       </view>
       <view class="image-list" wx:if="{{currentQuestion.sharedStemVisible && currentQuestion.sharedStem.sourceType === 'image'}}">
-        <image wx:for="{{currentQuestion.sharedStem.imageFileIds}}" wx:key="*this" class="content-image" mode="widthFix" src="{{item}}" bindtap="previewImage" data-src="{{item}}"></image>
+        <view class="stem-image-toolbar">
+          <view class="stem-scroll-hint">左右拖动查看完整题干</view>
+          <view class="stem-zoom-actions">
+            <view class="stem-zoom-btn" bindtap="zoomOutStemImage">-</view>
+            <view class="stem-zoom-value">{{stemImageScalePercent}}%</view>
+            <view class="stem-zoom-btn" bindtap="zoomInStemImage">+</view>
+            <view class="stem-zoom-reset" bindtap="resetStemImageScale">重置</view>
+          </view>
+        </view>
+        <scroll-view wx:for="{{currentQuestion.sharedStem.imageFileIds}}" wx:key="*this" class="stem-image-scroll" scroll-x enhanced show-scrollbar="true">
+          <image class="stem-content-image" style="height: {{stemImageHeightRpx}}rpx;" mode="heightFix" src="{{item}}" bindtap="previewImage" data-src="{{item}}"></image>
+        </scroll-view>
       </view>
 
       <view class="section-title">题目</view>
@@ -140,7 +151,18 @@
         {{currentQuestion.stem.text}}
       </view>
       <view class="image-list" wx:if="{{currentQuestion.stem.sourceType === 'image'}}">
-        <image wx:for="{{currentQuestion.stem.imageFileIds}}" wx:key="*this" class="content-image" mode="widthFix" src="{{item}}" bindtap="previewImage" data-src="{{item}}"></image>
+        <view class="stem-image-toolbar">
+          <view class="stem-scroll-hint">左右拖动查看完整题干</view>
+          <view class="stem-zoom-actions">
+            <view class="stem-zoom-btn" bindtap="zoomOutStemImage">-</view>
+            <view class="stem-zoom-value">{{stemImageScalePercent}}%</view>
+            <view class="stem-zoom-btn" bindtap="zoomInStemImage">+</view>
+            <view class="stem-zoom-reset" bindtap="resetStemImageScale">重置</view>
+          </view>
+        </view>
+        <scroll-view wx:for="{{currentQuestion.stem.imageFileIds}}" wx:key="*this" class="stem-image-scroll" scroll-x enhanced show-scrollbar="true">
+          <image class="stem-content-image" style="height: {{stemImageHeightRpx}}rpx;" mode="heightFix" src="{{item}}" bindtap="previewImage" data-src="{{item}}"></image>
+        </scroll-view>
       </view>
 
       <view class="section-title">{{currentQuestion.modeTitle}}</view>

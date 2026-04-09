@@ -1,5 +1,10 @@
 const QUESTION_CLOUD_FUNCTION_NAME = "questionService";
 const USER_CLOUD_FUNCTION_NAME = "userService";
+const STEM_IMAGE_BASE_HEIGHT_RPX = 320;
+const STEM_IMAGE_DEFAULT_SCALE = 1.4;
+const STEM_IMAGE_MIN_SCALE = 0.6;
+const STEM_IMAGE_MAX_SCALE = 2.2;
+const STEM_IMAGE_SCALE_STEP = 0.2;
 
 function getNavigationMetrics() {
   const systemInfo =
@@ -189,6 +194,9 @@ Page({
     currentQuestion: null,
     hasPrevious: false,
     hasNext: false,
+    stemImageScale: STEM_IMAGE_DEFAULT_SCALE,
+    stemImageScalePercent: Math.round(STEM_IMAGE_DEFAULT_SCALE * 100),
+    stemImageHeightRpx: Math.round(STEM_IMAGE_BASE_HEIGHT_RPX * STEM_IMAGE_DEFAULT_SCALE),
   },
 
   onLoad(options) {
@@ -388,5 +396,29 @@ Page({
       current: src,
       urls: urls.length ? urls : [src],
     });
+  },
+
+  updateStemImageScale(nextScale) {
+    const normalizedScale = Math.min(
+      STEM_IMAGE_MAX_SCALE,
+      Math.max(STEM_IMAGE_MIN_SCALE, Number(nextScale) || STEM_IMAGE_DEFAULT_SCALE)
+    );
+    this.setData({
+      stemImageScale: normalizedScale,
+      stemImageScalePercent: Math.round(normalizedScale * 100),
+      stemImageHeightRpx: Math.round(STEM_IMAGE_BASE_HEIGHT_RPX * normalizedScale),
+    });
+  },
+
+  zoomInStemImage() {
+    this.updateStemImageScale(this.data.stemImageScale + STEM_IMAGE_SCALE_STEP);
+  },
+
+  zoomOutStemImage() {
+    this.updateStemImageScale(this.data.stemImageScale - STEM_IMAGE_SCALE_STEP);
+  },
+
+  resetStemImageScale() {
+    this.updateStemImageScale(STEM_IMAGE_DEFAULT_SCALE);
   },
 });

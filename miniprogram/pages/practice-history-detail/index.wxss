@@ -329,6 +329,68 @@ page {
   gap: 18rpx;
 }
 
+.stem-image-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16rpx;
+  flex-wrap: wrap;
+}
+
+.stem-scroll-hint {
+  font-size: 22rpx;
+  color: #64748b;
+}
+
+.stem-zoom-actions {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.stem-zoom-btn,
+.stem-zoom-reset {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52rpx;
+  height: 52rpx;
+  padding: 0 16rpx;
+  border-radius: 999rpx;
+  background: #e2e8f0;
+  color: #0f172a;
+  font-size: 24rpx;
+  font-weight: 600;
+  box-sizing: border-box;
+}
+
+.stem-zoom-reset {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.stem-zoom-value {
+  min-width: 88rpx;
+  text-align: center;
+  font-size: 22rpx;
+  color: #334155;
+}
+
+.stem-image-scroll {
+  width: 100%;
+  white-space: nowrap;
+  border-radius: 22rpx;
+  background: #f8fafc;
+  padding-bottom: 12rpx;
+  box-sizing: border-box;
+}
+
+.stem-content-image {
+  min-width: 100%;
+  border-radius: 22rpx;
+  background: #f8fafc;
+}
+
 .content-image,
 .option-image,
 .grouped-image {

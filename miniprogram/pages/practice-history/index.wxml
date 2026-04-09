@@ -1,49 +1,72 @@
-<view class="page-container">
-  <view class="hero-card">
-    <view class="hero-title">做题记录</view>
-    <view class="hero-subtitle">按提交时间查看历史成绩摘要，点进单条记录可回顾每一道题。</view>
-  </view>
-
-  <view class="toolbar">
-    <button class="toolbar-btn" bindtap="loadHistoryList" loading="{{loading}}">刷新记录</button>
-  </view>
-
-  <view class="loading-state" wx:if="{{loading}}">
-    正在加载你的做题记录...
-  </view>
-
-  <view class="empty-state" wx:if="{{!loading && !historyList.length}}">
-    你还没有任何做题记录，先去在线答题完成一份试卷吧。
-  </view>
-
-  <view class="history-list" wx:if="{{historyList.length}}">
-    <view class="history-card" wx:for="{{historyList}}" wx:key="submissionId" bindtap="openHistoryDetail" data-submissionid="{{item.submissionId}}">
-      <view class="history-card-top">
-        <view class="history-time">{{item.submittedAtText}}</view>
-        <view class="history-score">{{item.score}} 分</view>
+<view class="page-shell">
+  <view class="custom-nav" style="padding-top: {{navMetrics.statusBarHeight}}px;">
+    <view class="custom-nav-inner">
+      <view class="custom-nav-main">
+        <view class="nav-icon-btn" bindtap="goBack" aria-label="返回">
+          <view class="nav-triangle-left"></view>
+        </view>
+        <view class="nav-icon-btn" bindtap="goHome" aria-label="回到首页">
+          <view class="nav-home-icon">
+            <view class="nav-home-roof"></view>
+            <view class="nav-home-body"></view>
+          </view>
+        </view>
+        <view class="custom-nav-caption">做题记录</view>
       </view>
-      <view class="history-grid">
-        <view class="history-item">
-          <view class="history-item-value">{{item.totalCount}}</view>
-          <view class="history-item-label">总题数</view>
-        </view>
-        <view class="history-item">
-          <view class="history-item-value">{{item.answeredCount}}</view>
-          <view class="history-item-label">已作答</view>
-        </view>
-        <view class="history-item">
-          <view class="history-item-value">{{item.correctCount}}</view>
-          <view class="history-item-label">答对</view>
-        </view>
-      </view>
-      <view class="history-id">提交编号：{{item.submissionId}}</view>
+      <view class="custom-nav-space" style="width: {{navMetrics.capsuleWidth}}px;"></view>
     </view>
   </view>
 
-  <cloud-tip-modal
-    showTipProps="{{showTip}}"
-    title="{{title}}"
-    content="{{content}}"
-    bindclose="hideCloudTip"
-  ></cloud-tip-modal>
+  <view class="page-body" style="padding-top: {{navMetrics.totalHeight + 20}}px;">
+    <view class="ambient ambient-left"></view>
+    <view class="ambient ambient-right"></view>
+
+    <view class="hero-card">
+      <view class="hero-shine"></view>
+      <view class="hero-kicker">History</view>
+      <view class="hero-title">做题记录</view>
+      <view class="hero-subtitle">按时间查看历史成绩，点击进入可回顾每一道题。</view>
+    </view>
+
+    <view class="refresh-card">
+      <button class="ghost-btn ghost-btn-full" bindtap="loadHistoryList" loading="{{loading}}">刷新记录</button>
+    </view>
+
+    <view class="loading-state" wx:if="{{loading}}">
+      正在加载你的做题记录...
+    </view>
+
+    <view class="empty-state" wx:if="{{!loading && !historyList.length}}">
+      你还没有任何做题记录，先去完成一份试卷吧。
+    </view>
+
+    <view class="history-list" wx:if="{{historyList.length}}">
+      <view class="history-card" wx:for="{{historyList}}" wx:key="submissionId" bindtap="openHistoryDetail" data-submissionid="{{item.submissionId}}">
+        <view class="history-card-top">
+          <view>
+            <view class="history-time">{{item.submittedAtText}}</view>
+            <view class="history-summary">{{item.correctCount}} / {{item.totalCount}} 题答对</view>
+          </view>
+          <view class="history-score">{{item.score}} 分</view>
+        </view>
+        <view class="history-grid">
+          <view class="history-item">
+            <view class="history-item-value">{{item.totalCount}}</view>
+            <view class="history-item-label">总题数</view>
+          </view>
+          <view class="history-item">
+            <view class="history-item-value">{{item.answeredCount}}</view>
+            <view class="history-item-label">已作答</view>
+          </view>
+          <view class="history-item">
+            <view class="history-item-value">{{item.correctCount}}</view>
+            <view class="history-item-label">答对</view>
+          </view>
+        </view>
+        <view class="history-id" wx:if="{{isAdmin}}">提交编号：{{item.submissionId}}</view>
+      </view>
+    </view>
+  </view>
+
+  <cloud-tip-modal showTipProps="{{showTip}}" title="{{title}}" content="{{content}}" bindclose="hideCloudTip"></cloud-tip-modal>
 </view>

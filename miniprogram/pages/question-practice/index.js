@@ -1,5 +1,27 @@
 const QUESTION_CLOUD_FUNCTION_NAME = "questionService";
 const USER_CLOUD_FUNCTION_NAME = "userService";
+const ASSISTANT_QR_IMAGE = "/images/assistant-qrcode.png";
+
+function getNavigationMetrics() {
+  const systemInfo =
+    typeof wx.getWindowInfo === "function" ? wx.getWindowInfo() : wx.getSystemInfoSync();
+  const menuButtonRect =
+    typeof wx.getMenuButtonBoundingClientRect === "function"
+      ? wx.getMenuButtonBoundingClientRect()
+      : null;
+  const statusBarHeight = systemInfo.statusBarHeight || 20;
+  const capsuleWidth = menuButtonRect ? systemInfo.windowWidth - menuButtonRect.left + 12 : 196;
+  const navBarHeight = menuButtonRect
+    ? menuButtonRect.height + (menuButtonRect.top - statusBarHeight) * 2
+    : 44;
+
+  return {
+    statusBarHeight,
+    navBarHeight,
+    totalHeight: statusBarHeight + navBarHeight,
+    capsuleWidth,
+  };
+}
 
 function getCloudEnv() {
   const app = getApp();
@@ -182,6 +204,8 @@ Page({
       role: "",
     },
     userLoaded: false,
+    isAdmin: false,
+    navMetrics: getNavigationMetrics(),
     paperQuestionRefs: [],
     paperMeta: {
       totalCount: 0,
@@ -197,6 +221,7 @@ Page({
     reviewQuestionResultsMap: {},
     activeSubmissionId: "",
     submissionSummary: null,
+    assistantQrImage: ASSISTANT_QR_IMAGE,
   },
 
   onLoad() {
@@ -262,6 +287,7 @@ Page({
       this.setData({
         loadingUser: false,
         userLoaded: true,
+        isAdmin: (user.role || "user") === "admin",
         currentUser: {
           openid: user.openid || "",
           role: user.role || "user",
@@ -285,6 +311,7 @@ Page({
       this.setData({
         loadingUser: false,
         userLoaded: true,
+        isAdmin: (user.role || "user") === "admin",
         currentUser: {
           openid: user.openid || "",
           role: user.role || "user",
@@ -535,6 +562,31 @@ Page({
     });
   },
 
+  openCurrentSubmissionDetail() {
+    if (!this.data.activeSubmissionId) {
+      return;
+    }
+    wx.navigateTo({
+      url: `/pages/practice-history-detail/index?submissionId=${this.data.activeSubmissionId}`,
+    });
+  },
+
+  goBack() {
+    if (getCurrentPages().length > 1) {
+      wx.navigateBack();
+      return;
+    }
+    wx.reLaunch({
+      url: "/pages/index/index",
+    });
+  },
+
+  goHome() {
+    wx.reLaunch({
+      url: "/pages/index/index",
+    });
+  },
+
   buildSubmitPayload() {
     const questions = this.data.paperQuestionRefs.map((question) => ({
       questionId: question.questionId,
@@ -595,7 +647,7 @@ Page({
 
       this.setData({
         submitting: false,
-        mode: "review",
+        mode: "result",
         reviewQuestionResultsMap,
         activeSubmissionId: summary.submissionId || "",
         submissionSummary: {
@@ -607,14 +659,7 @@ Page({
           submittedAt: Number(summary.submittedAt || Date.now()),
           submittedAtText: formatTime(Number(summary.submittedAt || Date.now())),
         },
-        currentQuestion: currentQuestionSource
-          ? this.buildRenderedQuestion(
-              currentQuestionSource,
-              this.data.answerMap[currentQuestionSource.questionId] || [],
-              reviewQuestionResultsMap,
-              "review"
-            )
-          : this.data.currentQuestion,
+        currentQuestion: currentQuestionSource || null,
       });
       wx.showToast({
         title: "交卷成功",

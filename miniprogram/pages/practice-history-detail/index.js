@@ -1,4 +1,26 @@
 const QUESTION_CLOUD_FUNCTION_NAME = "questionService";
+const USER_CLOUD_FUNCTION_NAME = "userService";
+
+function getNavigationMetrics() {
+  const systemInfo =
+    typeof wx.getWindowInfo === "function" ? wx.getWindowInfo() : wx.getSystemInfoSync();
+  const menuButtonRect =
+    typeof wx.getMenuButtonBoundingClientRect === "function"
+      ? wx.getMenuButtonBoundingClientRect()
+      : null;
+  const statusBarHeight = systemInfo.statusBarHeight || 20;
+  const capsuleWidth = menuButtonRect ? systemInfo.windowWidth - menuButtonRect.left + 12 : 196;
+  const navBarHeight = menuButtonRect
+    ? menuButtonRect.height + (menuButtonRect.top - statusBarHeight) * 2
+    : 44;
+
+  return {
+    statusBarHeight,
+    navBarHeight,
+    totalHeight: statusBarHeight + navBarHeight,
+    capsuleWidth,
+  };
+}
 
 function normalizeRuntimeDataVersion(value) {
   const normalized = typeof value === "string" ? value.trim() : "";
@@ -156,6 +178,8 @@ Page({
     title: "",
     content: "",
     loading: false,
+    isAdmin: false,
+    navMetrics: getNavigationMetrics(),
     submissionId: "",
     summary: null,
     questions: [],
@@ -169,6 +193,7 @@ Page({
 
   onLoad(options) {
     this.submissionId = normalizeString(options && options.submissionId);
+    this.loadCurrentUser();
     this.loadSubmissionDetail();
   },
 
@@ -184,6 +209,27 @@ Page({
     this.setData({
       showTip: false,
     });
+  },
+
+  async loadCurrentUser() {
+    try {
+      const resp = await wx.cloud.callFunction({
+        name: USER_CLOUD_FUNCTION_NAME,
+        data: {
+          type: "getCurrentUser",
+          ...getRuntimeContext(),
+        },
+      });
+      const result = unwrapCloudResult(resp);
+      const user = isPlainObject(result.data) ? result.data : {};
+      this.setData({
+        isAdmin: (user.role || "user") === "admin",
+      });
+    } catch (error) {
+      this.setData({
+        isAdmin: false,
+      });
+    }
   },
 
   async loadSubmissionDetail() {
@@ -301,6 +347,22 @@ Page({
       return;
     }
     this.switchToQuestion(this.data.currentQuestionIndex + 1);
+  },
+
+  goBack() {
+    if (getCurrentPages().length > 1) {
+      wx.navigateBack();
+      return;
+    }
+    wx.reLaunch({
+      url: "/pages/index/index",
+    });
+  },
+
+  goHome() {
+    wx.reLaunch({
+      url: "/pages/index/index",
+    });
   },
 
   previewImage(e) {

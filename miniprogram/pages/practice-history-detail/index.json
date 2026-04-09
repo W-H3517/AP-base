@@ -1,5 +1,7 @@
 {
-  "navigationBarTitleText": "记录详情",
+  "navigationStyle": "custom",
+  "backgroundColor": "#F4F7FB",
+  "backgroundTextStyle": "light",
   "usingComponents": {
     "cloud-tip-modal": "/components/cloudTipModal/index"
   }

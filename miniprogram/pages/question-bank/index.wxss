@@ -10,6 +10,65 @@ page {
   padding: 24rpx 28rpx 48rpx;
 }
 
+.page-back-row {
+  margin-bottom: 18rpx;
+}
+
+.page-back-actions {
+  display: flex;
+  gap: 14rpx;
+}
+
+.page-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 64rpx;
+  width: 64rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 10rpx 24rpx rgba(20, 33, 61, 0.08);
+}
+
+.page-triangle-left {
+  width: 0;
+  height: 0;
+  border-top: 12rpx solid transparent;
+  border-bottom: 12rpx solid transparent;
+  border-right: 20rpx solid #1d3557;
+  margin-left: -4rpx;
+}
+
+.page-home-icon {
+  position: relative;
+  width: 28rpx;
+  height: 28rpx;
+}
+
+.page-home-roof {
+  position: absolute;
+  top: -2rpx;
+  left: 4rpx;
+  width: 20rpx;
+  height: 20rpx;
+  border-top: 4rpx solid #1d3557;
+  border-left: 4rpx solid #1d3557;
+  transform: rotate(45deg);
+  box-sizing: border-box;
+}
+
+.page-home-body {
+  position: absolute;
+  left: 5rpx;
+  bottom: 0;
+  width: 18rpx;
+  height: 16rpx;
+  border: 4rpx solid #1d3557;
+  border-top: none;
+  border-radius: 0 0 5rpx 5rpx;
+  box-sizing: border-box;
+}
+
 .hero-card {
   margin-top: 8rpx;
   padding: 32rpx 28rpx;

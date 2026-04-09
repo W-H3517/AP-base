@@ -1,4 +1,18 @@
 <view class="page-container">
+  <view class="page-back-row">
+    <view class="page-back-actions">
+      <view class="page-icon-btn" bindtap="goBack" aria-label="返回">
+        <view class="page-triangle-left"></view>
+      </view>
+      <view class="page-icon-btn" bindtap="goHome" aria-label="回到首页">
+        <view class="page-home-icon">
+          <view class="page-home-roof"></view>
+          <view class="page-home-body"></view>
+        </view>
+      </view>
+    </view>
+  </view>
+
   <view class="hero-card">
     <view class="hero-top">
       <view>

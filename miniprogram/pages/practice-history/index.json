@@ -1,5 +1,7 @@
 {
-  "navigationBarTitleText": "做题记录",
+  "navigationStyle": "custom",
+  "backgroundColor": "#F4F7FB",
+  "backgroundTextStyle": "light",
   "enablePullDownRefresh": true,
   "usingComponents": {
     "cloud-tip-modal": "/components/cloudTipModal/index"

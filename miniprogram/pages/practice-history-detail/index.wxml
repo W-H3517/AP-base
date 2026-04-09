@@ -1,142 +1,123 @@
-<view class="page-container">
-  <view class="hero-card" wx:if="{{summary}}">
-    <view class="hero-title">记录详情</view>
-    <view class="hero-subtitle">回看当时的题面、你的作答和每题对错标记，不展示正确答案内容。</view>
-    <view class="hero-stats">
-      <view class="hero-stat">
-        <view class="hero-stat-value">{{summary.totalCount}}</view>
-        <view class="hero-stat-label">总题数</view>
-      </view>
-      <view class="hero-stat">
-        <view class="hero-stat-value">{{summary.correctCount}}</view>
-        <view class="hero-stat-label">答对</view>
-      </view>
-      <view class="hero-stat">
-        <view class="hero-stat-value">{{summary.score}}</view>
-        <view class="hero-stat-label">得分</view>
-      </view>
-    </view>
-  </view>
-
-  <view class="summary-card" wx:if="{{summary}}">
-    <view class="summary-row">
-      <view class="summary-label">提交时间</view>
-      <view class="summary-value">{{summary.submittedAtText}}</view>
-    </view>
-    <view class="summary-row">
-      <view class="summary-label">提交编号</view>
-      <view class="summary-value">{{submissionId}}</view>
-    </view>
-  </view>
-
-  <view class="loading-state" wx:if="{{loading}}">
-    正在加载记录详情...
-  </view>
-
-  <view class="empty-state" wx:if="{{!loading && !questions.length}}">
-    当前记录暂无可展示的题目快照。
-  </view>
-
-  <view class="question-card" wx:if="{{currentQuestion}}">
-    <view class="progress-row">
-      <view class="progress-badge">{{currentQuestionIndex + 1}} / {{questions.length}}</view>
-      <view class="question-tag">{{currentQuestion.questionLabel}}</view>
-      <view class="question-tag" wx:if="{{currentQuestion.entryMode === 'grouped'}}">题组第 {{currentQuestion.groupOrder}} 题</view>
-      <view class="question-status-tag question-status-tag-correct" wx:if="{{currentQuestion.reviewResult && currentQuestion.reviewResult.isCorrect}}">答对</view>
-      <view class="question-status-tag question-status-tag-wrong" wx:if="{{currentQuestion.reviewResult && !currentQuestion.reviewResult.isCorrect}}">答错</view>
-    </view>
-
-    <view class="section-title" wx:if="{{currentQuestion.sharedStemVisible}}">公共题干</view>
-    <view class="stem-card" wx:if="{{currentQuestion.sharedStemVisible && currentQuestion.sharedStem.sourceType === 'text'}}">
-      {{currentQuestion.sharedStem.text}}
-    </view>
-    <view class="image-list" wx:if="{{currentQuestion.sharedStemVisible && currentQuestion.sharedStem.sourceType === 'image'}}">
-      <image
-        wx:for="{{currentQuestion.sharedStem.imageFileIds}}"
-        wx:key="*this"
-        class="content-image"
-        mode="widthFix"
-        src="{{item}}"
-        bindtap="previewImage"
-        data-src="{{item}}"
-      ></image>
-    </view>
-
-    <view class="section-title">题目</view>
-    <view class="stem-card" wx:if="{{currentQuestion.stem.sourceType === 'text'}}">
-      {{currentQuestion.stem.text}}
-    </view>
-    <view class="image-list" wx:if="{{currentQuestion.stem.sourceType === 'image'}}">
-      <image
-        wx:for="{{currentQuestion.stem.imageFileIds}}"
-        wx:key="*this"
-        class="content-image"
-        mode="widthFix"
-        src="{{item}}"
-        bindtap="previewImage"
-        data-src="{{item}}"
-      ></image>
-    </view>
-
-    <view class="section-title">我的答案</view>
-    <view class="answer-summary">
-      <text class="answer-summary-label">已选项</text>
-      <text class="answer-summary-value">{{currentQuestion.selectedOptionKeysText}}</text>
-    </view>
-
-    <view wx:if="{{currentQuestion.optionMode === 'per_option'}}" class="option-list">
-      <view
-        class="option-card {{item.selected ? 'option-card-selected' : ''}}"
-        wx:for="{{currentQuestion.options.items}}"
-        wx:key="key"
-        wx:for-item="item"
-      >
-        <view class="option-top">
-          <view class="option-key">{{item.key}}</view>
-          <view class="option-state">{{item.selectionLabel}}</view>
+<view class="page-shell">
+  <view class="custom-nav" style="padding-top: {{navMetrics.statusBarHeight}}px;">
+    <view class="custom-nav-inner">
+      <view class="custom-nav-main">
+        <view class="nav-icon-btn" bindtap="goBack" aria-label="返回">
+          <view class="nav-triangle-left"></view>
         </view>
-        <view wx:if="{{item.sourceType === 'text'}}" class="option-text">{{item.text}}</view>
-        <image
-          wx:if="{{item.sourceType === 'image' && item.imageFileId}}"
-          class="option-image"
-          mode="widthFix"
-          src="{{item.imageFileId}}"
-          bindtap="previewImage"
-          data-src="{{item.imageFileId}}"
-        ></image>
+        <view class="nav-icon-btn" bindtap="goHome" aria-label="回到首页">
+          <view class="nav-home-icon">
+            <view class="nav-home-roof"></view>
+            <view class="nav-home-body"></view>
+          </view>
+        </view>
+        <view class="custom-nav-caption">记录详情</view>
       </view>
+      <view class="custom-nav-space" style="width: {{navMetrics.capsuleWidth}}px;"></view>
     </view>
+  </view>
 
-    <view wx:if="{{currentQuestion.optionMode === 'grouped_asset'}}">
-      <image
-        wx:if="{{currentQuestion.options.groupedAsset.imageFileId}}"
-        class="grouped-image"
-        mode="widthFix"
-        src="{{currentQuestion.options.groupedAsset.imageFileId}}"
-        bindtap="previewImage"
-        data-src="{{currentQuestion.options.groupedAsset.imageFileId}}"
-      ></image>
-      <view class="chip-list">
-        <view
-          class="chip {{item.selected ? 'chip-selected' : ''}}"
-          wx:for="{{currentQuestion.optionKeysForDisplay}}"
-          wx:key="key"
-        >
-          {{item.selected ? item.key + ' · 我的答案' : item.key}}
+  <view class="page-body" style="padding-top: {{navMetrics.totalHeight + 20}}px;">
+    <view class="ambient ambient-left"></view>
+    <view class="ambient ambient-right"></view>
+
+    <view class="hero-card" wx:if="{{summary}}">
+      <view class="hero-shine"></view>
+      <view class="hero-kicker">Review</view>
+      <view class="hero-title">记录详情</view>
+      <view class="hero-subtitle">回看当时的题面、我的作答和对错结果。</view>
+      <view class="hero-stats">
+        <view class="hero-stat">
+          <view class="hero-stat-value">{{summary.score}}</view>
+          <view class="hero-stat-label">得分</view>
+        </view>
+        <view class="hero-stat">
+          <view class="hero-stat-value">{{summary.correctCount}}</view>
+          <view class="hero-stat-label">答对</view>
+        </view>
+        <view class="hero-stat">
+          <view class="hero-stat-value">{{summary.totalCount}}</view>
+          <view class="hero-stat-label">总题数</view>
         </view>
       </view>
     </view>
 
-    <view class="navigation-row">
-      <button class="nav-btn nav-btn-secondary" bindtap="goToPreviousQuestion" disabled="{{!hasPrevious}}">上一题</button>
-      <button class="nav-btn nav-btn-primary" bindtap="goToNextQuestion" disabled="{{!hasNext}}">下一题</button>
+    <view class="summary-card" wx:if="{{summary}}">
+      <view class="summary-row">
+        <view class="summary-label">提交时间</view>
+        <view class="summary-value">{{summary.submittedAtText}}</view>
+      </view>
+      <view class="summary-row" wx:if="{{isAdmin}}">
+        <view class="summary-label">提交编号</view>
+        <view class="summary-value">{{submissionId}}</view>
+      </view>
+    </view>
+
+    <view class="loading-state" wx:if="{{loading}}">
+      正在加载记录详情...
+    </view>
+
+    <view class="empty-state" wx:if="{{!loading && !questions.length}}">
+      当前记录暂无可展示的题目快照。
+    </view>
+
+    <view class="question-card" wx:if="{{currentQuestion}}">
+      <view class="progress-row">
+        <view class="progress-badge">{{currentQuestionIndex + 1}} / {{questions.length}}</view>
+        <view class="question-status-tag question-status-tag-correct" wx:if="{{currentQuestion.reviewResult && currentQuestion.reviewResult.isCorrect}}">答对</view>
+        <view class="question-status-tag question-status-tag-wrong" wx:if="{{currentQuestion.reviewResult && !currentQuestion.reviewResult.isCorrect}}">答错</view>
+        <view class="question-tag" wx:if="{{isAdmin && currentQuestion.questionLabel}}">{{currentQuestion.questionLabel}}</view>
+        <view class="question-tag" wx:if="{{isAdmin && currentQuestion.entryMode === 'grouped'}}">题组第 {{currentQuestion.groupOrder}} 题</view>
+      </view>
+
+      <view class="section-title" wx:if="{{currentQuestion.sharedStemVisible}}">公共题干</view>
+      <view class="stem-card" wx:if="{{currentQuestion.sharedStemVisible && currentQuestion.sharedStem.sourceType === 'text'}}">
+        {{currentQuestion.sharedStem.text}}
+      </view>
+      <view class="image-list" wx:if="{{currentQuestion.sharedStemVisible && currentQuestion.sharedStem.sourceType === 'image'}}">
+        <image wx:for="{{currentQuestion.sharedStem.imageFileIds}}" wx:key="*this" class="content-image" mode="widthFix" src="{{item}}" bindtap="previewImage" data-src="{{item}}"></image>
+      </view>
+
+      <view class="section-title">题目</view>
+      <view class="stem-card" wx:if="{{currentQuestion.stem.sourceType === 'text'}}">
+        {{currentQuestion.stem.text}}
+      </view>
+      <view class="image-list" wx:if="{{currentQuestion.stem.sourceType === 'image'}}">
+        <image wx:for="{{currentQuestion.stem.imageFileIds}}" wx:key="*this" class="content-image" mode="widthFix" src="{{item}}" bindtap="previewImage" data-src="{{item}}"></image>
+      </view>
+
+      <view class="section-title">我的答案</view>
+      <view class="answer-summary">
+        <text class="answer-summary-label">已选项</text>
+        <text class="answer-summary-value">{{currentQuestion.selectedOptionKeysText}}</text>
+      </view>
+
+      <view wx:if="{{currentQuestion.optionMode === 'per_option'}}" class="option-list">
+        <view class="option-card {{item.selected ? 'option-card-selected' : ''}}" wx:for="{{currentQuestion.options.items}}" wx:key="key" wx:for-item="item">
+          <view class="option-top">
+            <view class="option-key">{{item.key}}</view>
+            <view class="option-state">{{item.selectionLabel}}</view>
+          </view>
+          <view wx:if="{{item.sourceType === 'text'}}" class="option-text">{{item.text}}</view>
+          <image wx:if="{{item.sourceType === 'image' && item.imageFileId}}" class="option-image" mode="widthFix" src="{{item.imageFileId}}" bindtap="previewImage" data-src="{{item.imageFileId}}"></image>
+        </view>
+      </view>
+
+      <view wx:if="{{currentQuestion.optionMode === 'grouped_asset'}}">
+        <image wx:if="{{currentQuestion.options.groupedAsset.imageFileId}}" class="grouped-image" mode="widthFix" src="{{currentQuestion.options.groupedAsset.imageFileId}}" bindtap="previewImage" data-src="{{currentQuestion.options.groupedAsset.imageFileId}}"></image>
+        <view class="chip-list">
+          <view class="chip {{item.selected ? 'chip-selected' : ''}}" wx:for="{{currentQuestion.optionKeysForDisplay}}" wx:key="key">
+            {{item.selected ? item.key + ' · 我的答案' : item.key}}
+          </view>
+        </view>
+      </view>
+
+      <view class="navigation-row">
+        <button class="nav-btn nav-btn-secondary" bindtap="goToPreviousQuestion" disabled="{{!hasPrevious}}">上一题</button>
+        <button class="nav-btn nav-btn-primary" bindtap="goToNextQuestion" disabled="{{!hasNext}}">下一题</button>
+      </view>
     </view>
   </view>
 
-  <cloud-tip-modal
-    showTipProps="{{showTip}}"
-    title="{{title}}"
-    content="{{content}}"
-    bindclose="hideCloudTip"
-  ></cloud-tip-modal>
+  <cloud-tip-modal showTipProps="{{showTip}}" title="{{title}}" content="{{content}}" bindclose="hideCloudTip"></cloud-tip-modal>
 </view>

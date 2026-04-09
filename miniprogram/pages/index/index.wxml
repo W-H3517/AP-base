@@ -9,26 +9,44 @@
   </view>
 
   <view class="page-body" style="padding-top: {{navMetrics.totalHeight + 20}}px;">
+    <view class="ambient ambient-left"></view>
+    <view class="ambient ambient-right"></view>
+    <view class="ambient ambient-bottom"></view>
+
     <view class="hero-card">
+      <view class="hero-shine"></view>
       <view class="hero-top">
         <view class="hero-copy">
+          <view class="hero-kicker">Practice Portal</view>
           <view class="hero-title">AP题库答题系统</view>
+          <view class="hero-subtitle">首页只保留核心入口，专注开始答题与回看记录。</view>
         </view>
       </view>
 
       <view class="action-stack">
         <view class="action-card action-card-primary" bindtap="openQuestionBrowser">
+          <view class="action-card-meta">
+            <view class="action-card-kicker">Practice</view>
+            <view class="action-card-index">01</view>
+          </view>
           <view class="action-card-title">在线答题</view>
           <view class="action-card-tip">逐题作答，交卷后立即进入回顾模式</view>
+          <view class="action-card-arrow">开始</view>
         </view>
         <view class="action-card action-card-secondary" bindtap="openPracticeHistory">
+          <view class="action-card-meta">
+            <view class="action-card-kicker">History</view>
+            <view class="action-card-index">02</view>
+          </view>
           <view class="action-card-title">做题记录</view>
           <view class="action-card-tip">查看历史提交时间、分数摘要和逐题详情</view>
+          <view class="action-card-arrow action-card-arrow-secondary">查看</view>
         </view>
       </view>
     </view>
 
     <view class="refresh-card">
+      <view class="refresh-card-label">同步入口</view>
       <button class="ghost-btn ghost-btn-full" bindtap="getCurrentUser" loading="{{loadingUser}}">刷新</button>
     </view>
 

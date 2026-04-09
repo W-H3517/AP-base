@@ -1,9 +1,9 @@
 page {
   min-height: 100%;
   background:
-    radial-gradient(circle at top left, rgba(22, 163, 74, 0.18), transparent 28%),
-    radial-gradient(circle at top right, rgba(37, 99, 235, 0.18), transparent 30%),
-    linear-gradient(180deg, #f7fafc 0%, #eff4f9 100%);
+    radial-gradient(circle at top left, rgba(20, 184, 166, 0.2), transparent 28%),
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.22), transparent 30%),
+    linear-gradient(180deg, #f5f8fc 0%, #edf3fa 52%, #eef5f7 100%);
 }
 
 .page-shell {
@@ -47,10 +47,44 @@ page {
 }
 
 .page-body {
+  position: relative;
+  overflow: hidden;
   padding-left: 24rpx;
   padding-right: 24rpx;
   padding-bottom: 40rpx;
   box-sizing: border-box;
+}
+
+.ambient {
+  position: absolute;
+  border-radius: 999rpx;
+  filter: blur(24rpx);
+  pointer-events: none;
+}
+
+.ambient-left {
+  top: 28rpx;
+  left: -90rpx;
+  width: 220rpx;
+  height: 220rpx;
+  background: rgba(16, 185, 129, 0.14);
+}
+
+.ambient-right {
+  top: 120rpx;
+  right: -80rpx;
+  width: 260rpx;
+  height: 260rpx;
+  background: rgba(59, 130, 246, 0.16);
+}
+
+.ambient-bottom {
+  bottom: 80rpx;
+  left: 50%;
+  margin-left: -160rpx;
+  width: 320rpx;
+  height: 180rpx;
+  background: rgba(148, 163, 184, 0.1);
 }
 
 .hero-card,
@@ -62,34 +96,78 @@ page {
 }
 
 .hero-card {
+  position: relative;
+  overflow: hidden;
   padding: 32rpx;
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 24rpx 60rpx rgba(15, 23, 42, 0.08);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(249, 251, 255, 0.94) 48%, rgba(243, 249, 255, 0.96) 100%);
+  border: 1rpx solid rgba(255, 255, 255, 0.75);
+  box-shadow:
+    0 28rpx 72rpx rgba(15, 23, 42, 0.1),
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.8);
+}
+
+.hero-shine {
+  position: absolute;
+  top: -80rpx;
+  right: -40rpx;
+  width: 280rpx;
+  height: 180rpx;
+  border-radius: 999rpx;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0));
+  transform: rotate(-14deg);
+  pointer-events: none;
 }
 
 .hero-top {
   display: block;
+  position: relative;
+  z-index: 1;
 }
 
 .hero-copy {
   flex: 1;
 }
 
+.hero-kicker {
+  display: inline-flex;
+  align-items: center;
+  padding: 10rpx 18rpx;
+  border-radius: 999rpx;
+  background: rgba(15, 23, 42, 0.06);
+  color: #475569;
+  font-size: 22rpx;
+  letter-spacing: 1rpx;
+}
+
 .hero-title {
+  margin-top: 20rpx;
   font-size: 72rpx;
   line-height: 1.1;
   font-weight: 700;
   letter-spacing: -1.5rpx;
 }
 
+.hero-subtitle {
+  margin-top: 18rpx;
+  max-width: 560rpx;
+  font-size: 28rpx;
+  line-height: 1.65;
+  color: #64748b;
+}
+
 .action-stack {
+  position: relative;
+  z-index: 1;
   margin-top: 28rpx;
   display: flex;
   flex-direction: column;
-  gap: 16rpx;
+  gap: 18rpx;
 }
 
 .action-card {
+  position: relative;
+  overflow: hidden;
   padding: 28rpx;
   border-radius: 24rpx;
   border: 1rpx solid rgba(148, 163, 184, 0.18);
@@ -111,7 +189,26 @@ page {
   background: rgba(255, 255, 255, 0.86);
 }
 
+.action-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.action-card-kicker {
+  font-size: 22rpx;
+  letter-spacing: 1rpx;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+
+.action-card-index {
+  font-size: 24rpx;
+  opacity: 0.7;
+}
+
 .action-card-title {
+  margin-top: 18rpx;
   font-size: 48rpx;
   line-height: 1.18;
   font-weight: 700;
@@ -124,11 +221,32 @@ page {
   color: #64748b;
 }
 
+.action-card-arrow {
+  margin-top: 22rpx;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 124rpx;
+  height: 58rpx;
+  padding: 0 20rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  font-size: 24rpx;
+  backdrop-filter: blur(12rpx);
+}
+
+.action-card-arrow-secondary {
+  background: rgba(37, 99, 235, 0.08);
+  color: #2563eb;
+}
+
 .refresh-card,
 .admin-card {
   margin-top: 20rpx;
   padding: 28rpx;
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1rpx solid rgba(255, 255, 255, 0.75);
   box-shadow: 0 18rpx 48rpx rgba(15, 23, 42, 0.06);
 }
 
@@ -138,15 +256,23 @@ page {
   color: #0f172a;
 }
 
+.refresh-card-label {
+  margin-bottom: 18rpx;
+  font-size: 22rpx;
+  letter-spacing: 1rpx;
+  color: #94a3b8;
+}
+
 .ghost-btn {
   margin: 0;
   height: 64rpx;
   line-height: 64rpx;
   border-radius: 999rpx;
-  border: 1rpx solid rgba(37, 99, 235, 0.16);
-  background: #ffffff;
+  border: 1rpx solid rgba(37, 99, 235, 0.14);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
   color: #2563eb;
   font-size: 24rpx;
+  box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.75);
 }
 
 .ghost-btn::after {
@@ -172,14 +298,14 @@ page {
   line-height: 80rpx;
   text-align: center;
   border-radius: 20rpx;
-  background: linear-gradient(135deg, #1fa971 0%, #2f6ee5 100%);
+  background: linear-gradient(135deg, #159a6b 0%, #2f6ee5 100%);
   color: #ffffff;
   font-size: 28rpx;
   font-weight: 600;
 }
 
 .mini-action-plain {
-  background: #f8fafc;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
   color: #0f172a;
 }
 

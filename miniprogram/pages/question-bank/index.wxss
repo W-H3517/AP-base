@@ -473,16 +473,37 @@ page {
 }
 
 .detail-hint-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16rpx;
   margin-bottom: 14rpx;
 }
 
 .detail-hint {
   display: inline-block;
+  flex: 1;
+  min-width: 0;
   padding: 6rpx 14rpx;
   border-radius: 999rpx;
   background: rgba(15, 98, 254, 0.1);
   color: #0f62fe;
   font-size: 22rpx;
+}
+
+.detail-toggle-btn {
+  margin: 0;
+  min-width: 200rpx;
+  padding: 0 18rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  color: #1d3557;
+  background: rgba(20, 33, 61, 0.06);
+}
+
+.detail-toggle-btn::after {
+  border: none;
 }
 
 .detail-child-tabs {

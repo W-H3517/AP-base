@@ -2,6 +2,7 @@
   "enablePullDownRefresh": true,
   "onReachBottomDistance": 120,
   "usingComponents": {
-    "cloud-tip-modal": "/components/cloudTipModal/index"
+    "cloud-tip-modal": "/components/cloudTipModal/index",
+    "mp-html": "mp-html"
   }
 }

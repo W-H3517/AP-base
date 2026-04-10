@@ -148,6 +148,9 @@
       <view class="modal-title">题目详情</view>
       <view class="detail-hint-row">
         <text class="detail-hint">数据来源：{{selectedDetailSource === 'cache' ? '本地缓存' : '网络最新'}}</text>
+        <button size="mini" class="detail-toggle-btn" bindtap="toggleDetailTextRenderMode">
+          {{detailShowRawText ? '查看渲染效果' : '查看原始文本'}}
+        </button>
       </view>
 
       <view wx:if="{{selectedDetailType === 'single'}}">
@@ -159,12 +162,39 @@
             <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-questionid="{{selectedDetail.questionId}}"></image>
           </view>
         </view>
-        <view wx:if="{{selectedDetail.stem.text}}" class="stem-text-card">{{selectedDetail.stem.text}}</view>
+        <view wx:if="{{selectedDetail.stem.text}}" class="stem-text-card">
+          <mp-html
+            wx:if="{{!selectedDetail.stem.renderAsPlainText}}"
+            content="{{selectedDetail.stem.renderedContent}}"
+            markdown="{{true}}"
+            container-style="{{stemMarkdownContainerStyle}}"
+            tag-style="{{stemMarkdownTagStyle}}"
+            preview-img="{{false}}"
+            selectable="{{true}}"
+            data-scope="stem"
+            binderror="onDetailRichTextError"
+          />
+          <view wx:else>{{selectedDetail.stem.text}}</view>
+        </view>
         <view class="section-title">选项</view>
         <view wx:if="{{selectedDetail.optionMode === 'per_option'}}" class="option-list">
           <view class="option-card" wx:for="{{selectedDetail.options.items}}" wx:key="key" wx:for-item="option">
             <view class="option-key">{{option.key}}</view>
-            <view wx:if="{{option.sourceType === 'text'}}" class="option-text-card">{{option.text}}</view>
+            <view wx:if="{{option.sourceType === 'text'}}" class="option-text-card">
+              <mp-html
+                wx:if="{{!option.renderAsPlainText}}"
+                content="{{option.renderedContent}}"
+                markdown="{{true}}"
+                container-style="{{optionMarkdownContainerStyle}}"
+                tag-style="{{optionMarkdownTagStyle}}"
+                preview-img="{{false}}"
+                selectable="{{true}}"
+                data-scope="option"
+                data-option-key="{{option.key}}"
+                binderror="onDetailRichTextError"
+              />
+              <view wx:else>{{option.text}}</view>
+            </view>
             <image wx:if="{{option.sourceType === 'image' && option.imageFileId}}" class="option-image clickable-image" mode="widthFix" src="{{option.imageFileId}}" bindtap="previewQuestionImages" data-src="{{option.imageFileId}}" data-questionid="{{selectedDetail.questionId}}"></image>
           </view>
         </view>
@@ -185,7 +215,20 @@
             <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-groupid="{{selectedDetail.groupId}}"></image>
           </view>
         </view>
-        <view wx:if="{{selectedDetail.sharedStem.text}}" class="stem-text-card">{{selectedDetail.sharedStem.text}}</view>
+        <view wx:if="{{selectedDetail.sharedStem.text}}" class="stem-text-card">
+          <mp-html
+            wx:if="{{!selectedDetail.sharedStem.renderAsPlainText}}"
+            content="{{selectedDetail.sharedStem.renderedContent}}"
+            markdown="{{true}}"
+            container-style="{{stemMarkdownContainerStyle}}"
+            tag-style="{{stemMarkdownTagStyle}}"
+            preview-img="{{false}}"
+            selectable="{{true}}"
+            data-scope="sharedStem"
+            binderror="onDetailRichTextError"
+          />
+          <view wx:else>{{selectedDetail.sharedStem.text}}</view>
+        </view>
 
         <view class="section-title">子题切换</view>
         <scroll-view class="detail-child-tabs" scroll-x>
@@ -203,12 +246,39 @@
               <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-questionid="{{selectedDetailActiveChild.questionId}}" data-groupid="{{selectedDetail.groupId}}"></image>
             </view>
           </view>
-          <view wx:if="{{selectedDetailActiveChild.stem.text}}" class="stem-text-card">{{selectedDetailActiveChild.stem.text}}</view>
+          <view wx:if="{{selectedDetailActiveChild.stem.text}}" class="stem-text-card">
+            <mp-html
+              wx:if="{{!selectedDetailActiveChild.stem.renderAsPlainText}}"
+              content="{{selectedDetailActiveChild.stem.renderedContent}}"
+              markdown="{{true}}"
+              container-style="{{stemMarkdownContainerStyle}}"
+              tag-style="{{stemMarkdownTagStyle}}"
+              preview-img="{{false}}"
+              selectable="{{true}}"
+              data-scope="stem"
+              binderror="onDetailRichTextError"
+            />
+            <view wx:else>{{selectedDetailActiveChild.stem.text}}</view>
+          </view>
           <view class="section-title">选项</view>
           <view wx:if="{{selectedDetailActiveChild.optionMode === 'per_option'}}" class="option-list">
             <view class="option-card" wx:for="{{selectedDetailActiveChild.options.items}}" wx:key="key" wx:for-item="option">
               <view class="option-key">{{option.key}}</view>
-              <view wx:if="{{option.sourceType === 'text'}}" class="option-text-card">{{option.text}}</view>
+              <view wx:if="{{option.sourceType === 'text'}}" class="option-text-card">
+                <mp-html
+                  wx:if="{{!option.renderAsPlainText}}"
+                  content="{{option.renderedContent}}"
+                  markdown="{{true}}"
+                  container-style="{{optionMarkdownContainerStyle}}"
+                  tag-style="{{optionMarkdownTagStyle}}"
+                  preview-img="{{false}}"
+                  selectable="{{true}}"
+                  data-scope="option"
+                  data-option-key="{{option.key}}"
+                  binderror="onDetailRichTextError"
+                />
+                <view wx:else>{{option.text}}</view>
+              </view>
               <image wx:if="{{option.sourceType === 'image' && option.imageFileId}}" class="option-image clickable-image" mode="widthFix" src="{{option.imageFileId}}" bindtap="previewQuestionImages" data-src="{{option.imageFileId}}" data-questionid="{{selectedDetailActiveChild.questionId}}" data-groupid="{{selectedDetail.groupId}}"></image>
             </view>
           </view>

@@ -5,6 +5,14 @@ const OPTION_KEY_POOL = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 const QUESTION_SUMMARY_PAGE_SIZE = 10;
 const SINGLE_DETAIL_CACHE_PREFIX = "question_detail:";
 const GROUP_DETAIL_CACHE_PREFIX = "question_group_detail:";
+const {
+  OPTION_MARKDOWN_CONTAINER_STYLE,
+  OPTION_MARKDOWN_TAG_STYLE,
+  STEM_MARKDOWN_CONTAINER_STYLE,
+  STEM_MARKDOWN_TAG_STYLE,
+  attachRenderedOptionItem,
+  attachRenderedRichContent,
+} = require("../../utils/markdown");
 
 function getCloudEnv() {
   const app = getApp();
@@ -330,11 +338,11 @@ function normalizeRichContent(rawContent, legacyImageValue = "") {
     legacyImageValue
   );
   const text = normalizeString(content.text);
-  return {
+  return attachRenderedRichContent({
     sourceType: imageFileIds.length ? "image" : "text",
     text,
     imageFileIds,
-  };
+  });
 }
 
 function normalizeOptionItem(item) {
@@ -346,12 +354,12 @@ function normalizeOptionItem(item) {
   );
   const text = normalizeString(option.text);
   const imageFileId = normalizeString(option.imageFileId);
-  return {
+  return attachRenderedOptionItem({
     key,
     sourceType,
     text: sourceType === "text" ? text : "",
     imageFileId: sourceType === "image" ? imageFileId : "",
-  };
+  });
 }
 
 function normalizeGroupedAsset(groupedAsset) {
@@ -577,6 +585,32 @@ function getQuestionImageUrls(question) {
   return uniqueArray(urls.filter(Boolean));
 }
 
+function applyRenderModeToOptions(options, renderAsPlainText) {
+  const nextOptions = isPlainObject(options) ? clone(options) : normalizeOptions({});
+  nextOptions.items = normalizeArray(nextOptions.items).map((item) =>
+    assignObject({}, item, {
+      renderAsPlainText: !!renderAsPlainText,
+    })
+  );
+  return nextOptions;
+}
+
+function applyRenderModeToQuestion(question, renderAsPlainText, { includeSharedStem = false } = {}) {
+  const source = isPlainObject(question) ? clone(question) : {};
+  if (includeSharedStem && source.sharedStem) {
+    source.sharedStem = assignObject({}, source.sharedStem, {
+      renderAsPlainText: !!renderAsPlainText,
+    });
+  }
+  if (source.stem) {
+    source.stem = assignObject({}, source.stem, {
+      renderAsPlainText: !!renderAsPlainText,
+    });
+  }
+  source.options = applyRenderModeToOptions(source.options, renderAsPlainText);
+  return source;
+}
+
 function normalizeQuestionItem(question, isAdmin) {
   const source = isPlainObject(question) ? question : {};
   const entryMode = normalizeEntryMode(source.entryMode || (source.groupId ? "grouped" : "single"));
@@ -716,6 +750,11 @@ Page({
     selectedDetailActiveChildQuestionId: "",
     selectedDetailActiveChild: null,
     detailChildTabs: [],
+    detailShowRawText: false,
+    stemMarkdownContainerStyle: STEM_MARKDOWN_CONTAINER_STYLE,
+    stemMarkdownTagStyle: STEM_MARKDOWN_TAG_STYLE,
+    optionMarkdownContainerStyle: OPTION_MARKDOWN_CONTAINER_STYLE,
+    optionMarkdownTagStyle: OPTION_MARKDOWN_TAG_STYLE,
     showDetailModal: false,
     showEditorModal: false,
     editorMode: "create",
@@ -1348,7 +1387,10 @@ Page({
   },
 
   showSingleDetail(detail, options = {}) {
-    const normalized = normalizeQuestionItem(detail, this.data.isAdmin);
+    const normalized = applyRenderModeToQuestion(
+      normalizeQuestionItem(detail, this.data.isAdmin),
+      false
+    );
     this.setData({
       selectedDetail: normalized,
       selectedDetailType: "single",
@@ -1358,25 +1400,34 @@ Page({
       selectedDetailActiveChildQuestionId: "",
       selectedDetailActiveChild: null,
       detailChildTabs: [],
+      detailShowRawText: false,
       showDetailModal: true,
     });
   },
 
   showGroupedChildDetail(groupDetail, activeChildQuestionId, options = {}) {
     const normalized = normalizeQuestionGroupDetail(groupDetail, this.data.isAdmin);
+    const detailShowRawText = !!options.detailShowRawText;
     const activeChild =
       normalizeArray(normalized.children).find(
         (child) => child.questionId === normalizeString(activeChildQuestionId)
       ) || normalizeArray(normalized.children)[0] || null;
     this.setData({
-      selectedDetail: normalized,
+      selectedDetail: assignObject({}, normalized, {
+        sharedStem: assignObject({}, normalized.sharedStem, {
+          renderAsPlainText: detailShowRawText,
+        }),
+      }),
       selectedDetailType: "grouped",
       selectedDetailSource: options.source || "network",
       selectedDetailQuestionId: activeChild ? activeChild.questionId : "",
       selectedDetailGroupId: normalized.groupId,
       selectedDetailActiveChildQuestionId: activeChild ? activeChild.questionId : "",
-      selectedDetailActiveChild: activeChild,
+      selectedDetailActiveChild: activeChild
+        ? applyRenderModeToQuestion(activeChild, detailShowRawText)
+        : null,
       detailChildTabs: buildDetailChildTabs(normalized.children, activeChild ? activeChild.questionId : ""),
+      detailShowRawText,
       showDetailModal: true,
     });
   },
@@ -1446,6 +1497,7 @@ Page({
       selectedDetailActiveChildQuestionId: "",
       selectedDetailActiveChild: null,
       detailChildTabs: [],
+      detailShowRawText: false,
     });
   },
 
@@ -1460,13 +1512,40 @@ Page({
     if (!activeChild) {
       return;
     }
+    const detailShowRawText = !!this.data.detailShowRawText;
     this.setData({
       selectedDetailQuestionId: activeChild.questionId,
       selectedDetailActiveChildQuestionId: activeChild.questionId,
-      selectedDetailActiveChild: activeChild,
+      selectedDetailActiveChild: applyRenderModeToQuestion(activeChild, detailShowRawText),
       detailChildTabs: buildDetailChildTabs(
         this.data.selectedDetail && this.data.selectedDetail.children,
         activeChild.questionId
+      ),
+    });
+  },
+
+  toggleDetailTextRenderMode() {
+    if (!this.data.showDetailModal) {
+      return;
+    }
+    const nextShowRawText = !this.data.detailShowRawText;
+    if (this.data.selectedDetailType === "single") {
+      this.setData({
+        detailShowRawText: nextShowRawText,
+        selectedDetail: applyRenderModeToQuestion(
+          this.data.selectedDetail,
+          nextShowRawText
+        ),
+      });
+      return;
+    }
+
+    this.setData({
+      detailShowRawText: nextShowRawText,
+      "selectedDetail.sharedStem.renderAsPlainText": nextShowRawText,
+      selectedDetailActiveChild: applyRenderModeToQuestion(
+        this.data.selectedDetailActiveChild,
+        nextShowRawText
       ),
     });
   },
@@ -1526,6 +1605,60 @@ Page({
       current,
       urls: urls.length ? urls : [current],
     });
+  },
+
+  onDetailRichTextError(e) {
+    const scope = normalizeString(e.currentTarget.dataset.scope);
+    const optionKey = normalizeString(e.currentTarget.dataset.optionKey).toUpperCase();
+
+    if (this.data.selectedDetailType === "single") {
+      if (scope === "stem" && this.data.selectedDetail && this.data.selectedDetail.stem) {
+        this.setData({
+          "selectedDetail.stem.renderAsPlainText": true,
+        });
+        return;
+      }
+      if (scope === "option" && optionKey) {
+        const optionIndex = normalizeArray(
+          this.data.selectedDetail &&
+            this.data.selectedDetail.options &&
+            this.data.selectedDetail.options.items
+        ).findIndex((item) => item.key === optionKey);
+        if (optionIndex !== -1) {
+          this.setData({
+            [`selectedDetail.options.items[${optionIndex}].renderAsPlainText`]: true,
+          });
+        }
+        return;
+      }
+    }
+
+    if (this.data.selectedDetailType === "grouped") {
+      if (scope === "sharedStem" && this.data.selectedDetail && this.data.selectedDetail.sharedStem) {
+        this.setData({
+          "selectedDetail.sharedStem.renderAsPlainText": true,
+        });
+        return;
+      }
+      if (scope === "stem" && this.data.selectedDetailActiveChild && this.data.selectedDetailActiveChild.stem) {
+        this.setData({
+          "selectedDetailActiveChild.stem.renderAsPlainText": true,
+        });
+        return;
+      }
+      if (scope === "option" && optionKey) {
+        const optionIndex = normalizeArray(
+          this.data.selectedDetailActiveChild &&
+            this.data.selectedDetailActiveChild.options &&
+            this.data.selectedDetailActiveChild.options.items
+        ).findIndex((item) => item.key === optionKey);
+        if (optionIndex !== -1) {
+          this.setData({
+            [`selectedDetailActiveChild.options.items[${optionIndex}].renderAsPlainText`]: true,
+          });
+        }
+      }
+    }
   },
 
   async openCreateQuestion() {

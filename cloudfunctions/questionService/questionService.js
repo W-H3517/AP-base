@@ -419,6 +419,30 @@ const getQuestionsByIds = async (questionIds, questionsCollectionName) => {
   );
 };
 
+const getAllQuestions = async (questionsCollectionName) => {
+  const records = [];
+  let offset = 0;
+
+  while (true) {
+    const resp = await db
+      .collection(questionsCollectionName)
+      .skip(offset)
+      .limit(DB_IN_QUERY_BATCH_SIZE)
+      .get();
+    const batch = Array.isArray(resp?.data) ? resp.data : [];
+    if (!batch.length) {
+      break;
+    }
+    records.push(...batch);
+    if (batch.length < DB_IN_QUERY_BATCH_SIZE) {
+      break;
+    }
+    offset += batch.length;
+  }
+
+  return records;
+};
+
 const getQuestionsByGroupId = async (groupId, questionsCollectionName) => {
   const resp = await db
     .collection(questionsCollectionName)
@@ -1423,9 +1447,9 @@ const abandonDraft = async (event) =>
 const listQuestions = async (event) => {
   const user = await ensureUserRecord(event);
   const collections = getCollections(event);
-  const resp = await db.collection(collections.questions).get();
+  const questions = await getAllQuestions(collections.questions);
   return ok(
-    sortQuestions(resp.data || []).map((question) =>
+    sortQuestions(questions || []).map((question) =>
       stripQuestionByRole(question, user.role),
     ),
   );
@@ -1440,8 +1464,8 @@ const listQuestionSummaries = async (event) => {
 
   normalizeString(payload?.keyword);
 
-  const resp = await db.collection(collections.questions).get();
-  const units = buildQuestionSummaryPaginationUnits(resp.data || []);
+  const questions = await getAllQuestions(collections.questions);
+  const units = buildQuestionSummaryPaginationUnits(questions || []);
   const totalQuestionCount = countQuestionSummaryUnits(units);
   const page = paginateQuestionSummaryUnits(units, offset, limit);
 
@@ -1626,9 +1650,9 @@ const buildPracticePaperQuestions = (
 const getPracticePaper = async (event) => {
   await ensureUserRecord(event);
   const collections = getCollections(event);
-  const resp = await db.collection(collections.questions).get();
+  const allQuestions = await getAllQuestions(collections.questions);
   const configuredCount = normalizePracticePaperQuestionCount(PRACTICE_PAPER_QUESTION_COUNT);
-  const questions = buildPracticePaperQuestions(resp.data || [], configuredCount);
+  const questions = buildPracticePaperQuestions(allQuestions || [], configuredCount);
   const questionDetails = questions.map((question) =>
     buildPracticeQuestionItem(question),
   );

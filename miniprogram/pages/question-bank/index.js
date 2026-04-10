@@ -2,6 +2,7 @@ const QUESTION_CLOUD_FUNCTION_NAME = "questionService";
 const USER_CLOUD_FUNCTION_NAME = "userService";
 const QUESTION_TYPE = "choice";
 const OPTION_KEY_POOL = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+const DEFAULT_OPTION_KEYS = ["A", "B", "C", "D"];
 const QUESTION_SUMMARY_PAGE_SIZE = 10;
 const SINGLE_DETAIL_CACHE_PREFIX = "question_detail:";
 const GROUP_DETAIL_CACHE_PREFIX = "question_group_detail:";
@@ -115,7 +116,7 @@ function createOptionItem(key) {
 }
 
 function createDefaultOptions() {
-  const keys = ["A", "B"];
+  const keys = DEFAULT_OPTION_KEYS.slice();
   return {
     keys,
     items: keys.map((key) => createOptionItem(key)),
@@ -238,7 +239,7 @@ function hydrateQuestionEditorState(question) {
   }
 
   if (!target.options.keys.length) {
-    target.options.keys = ["A", "B"];
+    target.options.keys = DEFAULT_OPTION_KEYS.slice();
   }
 
   if (!target.options.items.length) {

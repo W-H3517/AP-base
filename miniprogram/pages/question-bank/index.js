@@ -144,6 +144,62 @@ function createEmptyEditorForm() {
   };
 }
 
+function createEmptyDraftSessionMap() {
+  return {
+    single: null,
+    grouped: null,
+  };
+}
+
+function normalizeDraftSession(session, fallbackEntryMode = "single") {
+  const source = isPlainObject(session) ? session : {};
+  const entryMode = normalizeEntryMode(source.entryMode || fallbackEntryMode);
+  return {
+    draftToken: normalizeString(source.draftToken),
+    entryMode,
+    storageRoot: normalizeStorageRoot(source.storageRoot),
+    questionId: normalizeString(source.questionId),
+    groupId: normalizeString(source.groupId),
+    questionIds: normalizeArray(source.questionIds).map((item) => normalizeString(item)).filter(Boolean),
+    resourceBasePath: normalizeString(source.resourceBasePath),
+    status: normalizeString(source.status) || "prepared",
+    expiresAt: Number(source.expiresAt || 0),
+  };
+}
+
+function isDraftSessionAvailable(session) {
+  return !!(session && session.draftToken);
+}
+
+function isDraftExpired(session) {
+  return !session || !session.expiresAt || Number(session.expiresAt) <= Date.now();
+}
+
+function isCloudFileId(value) {
+  return normalizeString(value).startsWith("cloud://");
+}
+
+function getFileExtension(filePath) {
+  const normalized = normalizeString(filePath);
+  const matched = normalized.match(/(\.[a-zA-Z0-9]+)(?:\?|$)/);
+  return matched ? matched[1].toLowerCase() : ".png";
+}
+
+function sanitizePathSegment(value, fallback = "resource") {
+  const normalized = normalizeString(value)
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || fallback;
+}
+
+function buildResourceCloudPath(basePath, kind, sourcePath, suffix = "") {
+  const ext = getFileExtension(sourcePath);
+  const random = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  const normalizedKind = sanitizePathSegment(kind, "asset");
+  const normalizedSuffix = sanitizePathSegment(suffix, "");
+  return `${basePath}/${normalizedKind}${normalizedSuffix ? `-${normalizedSuffix}` : ""}-${random}${ext}`;
+}
+
 function buildAnswerChoiceList(question) {
   const source = isPlainObject(question) ? question : {};
   const keys = normalizeArray(source.options && source.options.keys)
@@ -665,6 +721,9 @@ Page({
     editorMode: "create",
     editorEntryMode: "single",
     editorForm: createEmptyEditorForm(),
+    preparingDraft: false,
+    draftSessions: createEmptyDraftSessionMap(),
+    lastDraftEntryMode: "single",
   },
 
   onLoad(options) {
@@ -744,6 +803,79 @@ Page({
     return unwrapCloudResult(resp);
   },
 
+  getDraftSession(entryMode = this.data.editorEntryMode) {
+    return normalizeDraftSession(
+      this.data.draftSessions && this.data.draftSessions[normalizeEntryMode(entryMode)],
+      entryMode
+    );
+  },
+
+  setDraftSession(entryMode, session) {
+    const normalizedEntryMode = normalizeEntryMode(entryMode);
+    this.setData({
+      [`draftSessions.${normalizedEntryMode}`]: session ? normalizeDraftSession(session, normalizedEntryMode) : null,
+      lastDraftEntryMode: normalizedEntryMode,
+    });
+  },
+
+  resetEditorState() {
+    this.setData({
+      showEditorModal: false,
+      editorMode: "create",
+      editorEntryMode: "single",
+      editorForm: hydrateEditorForm(createEmptyEditorForm()),
+      draftSessions: createEmptyDraftSessionMap(),
+      lastDraftEntryMode: "single",
+    });
+  },
+
+  async ensureDraftSession(entryMode, options = {}) {
+    const normalizedEntryMode = normalizeEntryMode(entryMode);
+    const existing = this.getDraftSession(normalizedEntryMode);
+    if (isDraftSessionAvailable(existing) && !isDraftExpired(existing)) {
+      return existing;
+    }
+
+    const type =
+      normalizedEntryMode === "grouped"
+        ? "prepareCreateQuestionGroupDraft"
+        : "prepareCreateQuestionDraft";
+    const payload =
+      normalizedEntryMode === "grouped"
+        ? { childCount: Math.max(2, Number(options.childCount || 2)) }
+        : {};
+    const result = await this.callQuestionFunction(type, payload);
+    const draftSession = normalizeDraftSession(result && result.data ? result.data : result, normalizedEntryMode);
+    this.setDraftSession(normalizedEntryMode, draftSession);
+    return draftSession;
+  },
+
+  async cleanupDraftResources(entryMode, uploadedFileIds = [], status) {
+    const draftSession = this.getDraftSession(entryMode);
+    if (!isDraftSessionAvailable(draftSession)) {
+      return null;
+    }
+    const result = await this.callQuestionFunction("cleanupDraftResources", {
+      draftToken: draftSession.draftToken,
+      uploadedFileIds,
+      status,
+    });
+    const data = result && result.data ? result.data : result;
+    const nextStatus = status || "failed";
+    this.setDraftSession(entryMode, assignObject({}, draftSession, {
+      status: nextStatus,
+    }));
+    return data;
+  },
+
+  async uploadSingleFileToCloud(localPath, cloudPath) {
+    const result = await wx.cloud.uploadFile({
+      cloudPath,
+      filePath: localPath,
+    });
+    return normalizeString(result && result.fileID);
+  },
+
   setEditorForm(mutator) {
     const editorForm = clone(this.data.editorForm);
     mutator(editorForm);
@@ -767,6 +899,179 @@ Page({
   getChildIndexFromEvent(e) {
     const value = e.currentTarget.dataset.childIndex;
     return value === undefined || value === null || value === "" ? null : Number(value);
+  },
+
+  buildCreatePayloadWithDraft(validationData, draftSession) {
+    if (normalizeEntryMode(draftSession.entryMode) === "grouped") {
+      const questionIds = normalizeArray(draftSession.questionIds);
+      return assignObject({}, validationData, {
+        groupId: draftSession.groupId,
+        children: normalizeArray(validationData.children).map((child, index) =>
+          assignObject({}, child, {
+            questionId: questionIds[index] || "",
+          })
+        ),
+      });
+    }
+    return assignObject({}, validationData, {
+      questionId: draftSession.questionId,
+    });
+  },
+
+  async uploadRichContentResources(content, basePath, kind, suffix = "", uploadedFileIds = []) {
+    const nextContent = clone(content || {});
+    const imageFileIds = normalizeArray(nextContent.imageFileIds);
+    const nextImageFileIds = [];
+    for (let i = 0; i < imageFileIds.length; i += 1) {
+      const fileRef = normalizeString(imageFileIds[i]);
+      if (!fileRef) {
+        continue;
+      }
+      if (isCloudFileId(fileRef)) {
+        nextImageFileIds.push(fileRef);
+        continue;
+      }
+      const cloudPath = buildResourceCloudPath(
+        basePath,
+        kind,
+        fileRef,
+        `${suffix}${suffix ? "-" : ""}${i + 1}`
+      );
+      const fileID = await this.uploadSingleFileToCloud(fileRef, cloudPath);
+      if (!fileID) {
+        throw new Error("图片上传失败");
+      }
+      uploadedFileIds.push(fileID);
+      nextImageFileIds.push(fileID);
+    }
+    nextContent.imageFileIds = nextImageFileIds;
+    nextContent.sourceType = nextImageFileIds.length ? "image" : "text";
+    return nextContent;
+  },
+
+  async uploadOptionResources(options, optionMode, basePath, suffix = "", uploadedFileIds = []) {
+    const nextOptions = clone(options || {});
+    if (normalizeOptionMode(optionMode) === "per_option") {
+      nextOptions.items = normalizeArray(nextOptions.items);
+      for (let i = 0; i < nextOptions.items.length; i += 1) {
+        const item = nextOptions.items[i];
+        if (normalizeSourceType(item && item.sourceType) !== "image") {
+          continue;
+        }
+        const fileRef = normalizeString(item && item.imageFileId);
+        if (!fileRef || isCloudFileId(fileRef)) {
+          continue;
+        }
+        const optionKey = sanitizePathSegment(item.key || `option-${i + 1}`, `option-${i + 1}`);
+        const fileID = await this.uploadSingleFileToCloud(
+          fileRef,
+          buildResourceCloudPath(
+            basePath,
+            "option",
+            fileRef,
+            `${suffix}${suffix ? "-" : ""}${optionKey}`
+          )
+        );
+        if (!fileID) {
+          throw new Error("选项图片上传失败");
+        }
+        uploadedFileIds.push(fileID);
+        nextOptions.items[i] = assignObject({}, item, {
+          imageFileId: fileID,
+        });
+      }
+      return nextOptions;
+    }
+
+    const groupedAssetFileRef = normalizeString(
+      nextOptions && nextOptions.groupedAsset && nextOptions.groupedAsset.imageFileId
+    );
+    if (groupedAssetFileRef && !isCloudFileId(groupedAssetFileRef)) {
+      const fileID = await this.uploadSingleFileToCloud(
+        groupedAssetFileRef,
+        buildResourceCloudPath(basePath, "grouped-asset", groupedAssetFileRef, suffix)
+      );
+      if (!fileID) {
+        throw new Error("大图上传失败");
+      }
+      uploadedFileIds.push(fileID);
+      nextOptions.groupedAsset = assignObject({}, nextOptions.groupedAsset, {
+        imageFileId: fileID,
+      });
+    }
+    return nextOptions;
+  },
+
+  async uploadResourcesForPayload(payload, draftSession, uploadedFileIds = []) {
+    if (normalizeEntryMode(draftSession.entryMode) === "grouped") {
+      const basePath = draftSession.resourceBasePath;
+      const nextSharedStem = await this.uploadRichContentResources(
+        payload.sharedStem,
+        basePath,
+        "shared-stem",
+        "",
+        uploadedFileIds
+      );
+      const nextChildren = [];
+      const children = normalizeArray(payload.children);
+      for (let i = 0; i < children.length; i += 1) {
+        const child = clone(children[i]);
+        child.sharedStem = nextSharedStem;
+        child.stem = await this.uploadRichContentResources(
+          child.stem,
+          basePath,
+          "stem",
+          String(i + 1),
+          uploadedFileIds
+        );
+        child.options = await this.uploadOptionResources(
+          child.options,
+          child.optionMode,
+          basePath,
+          String(i + 1),
+          uploadedFileIds
+        );
+        nextChildren.push(child);
+      }
+      return {
+        payload: assignObject({}, payload, {
+          sharedStem: nextSharedStem,
+          children: nextChildren,
+        }),
+        uploadedFileIds,
+      };
+    }
+
+    const basePath = draftSession.resourceBasePath;
+    const nextSharedStem = await this.uploadRichContentResources(
+      payload.sharedStem,
+      basePath,
+      "shared-stem",
+      "",
+      uploadedFileIds
+    );
+    const nextStem = await this.uploadRichContentResources(
+      payload.stem,
+      basePath,
+      "stem",
+      "",
+      uploadedFileIds
+    );
+    const nextOptions = await this.uploadOptionResources(
+      payload.options,
+      payload.optionMode,
+      basePath,
+      "",
+      uploadedFileIds
+    );
+    return {
+      payload: assignObject({}, payload, {
+        sharedStem: nextSharedStem,
+        stem: nextStem,
+        options: nextOptions,
+      }),
+      uploadedFileIds,
+    };
   },
 
   async refreshCurrentUser(showLoading = true) {
@@ -1223,18 +1528,61 @@ Page({
     });
   },
 
-  openCreateQuestion() {
+  async openCreateQuestion() {
     if (!this.data.isAdmin) {
       this.showCloudTip("权限不足", "只有管理员才能新增题目。");
       return;
     }
 
-    this.setData({
-      editorMode: "create",
-      editorEntryMode: "single",
-      editorForm: hydrateEditorForm(createEmptyEditorForm()),
-      showEditorModal: true,
+    if (!this.ensureCloudEnv() || this.data.preparingDraft) {
+      return;
+    }
+
+    const existingSingleDraft = this.getDraftSession("single");
+    const existingGroupedDraft = this.getDraftSession("grouped");
+    if (
+      (isDraftSessionAvailable(existingSingleDraft) && !isDraftExpired(existingSingleDraft)) ||
+      (isDraftSessionAvailable(existingGroupedDraft) && !isDraftExpired(existingGroupedDraft))
+    ) {
+      this.setData({
+        showEditorModal: true,
+        editorMode: "create",
+        editorEntryMode:
+          isDraftSessionAvailable(existingGroupedDraft) &&
+          !isDraftExpired(existingGroupedDraft) &&
+          this.data.lastDraftEntryMode === "grouped"
+          ? "grouped"
+          : "single",
+      });
+      return;
+    }
+
+    wx.showLoading({
+      title: "准备中...",
     });
+    this.setData({
+      preparingDraft: true,
+      editorForm: hydrateEditorForm(createEmptyEditorForm()),
+    });
+    try {
+      const draftSession = await this.ensureDraftSession("single");
+      const nextForm = hydrateEditorForm(createEmptyEditorForm());
+      nextForm.single.questionId = draftSession.questionId;
+      this.setData({
+        editorMode: "create",
+        editorEntryMode: "single",
+        editorForm: nextForm,
+        showEditorModal: true,
+        lastDraftEntryMode: "single",
+      });
+    } catch (error) {
+      this.showCloudTip("创建会话失败", getErrorMessage(error));
+    } finally {
+      wx.hideLoading();
+      this.setData({
+        preparingDraft: false,
+      });
+    }
   },
 
   async openEditQuestion(e) {
@@ -1244,9 +1592,6 @@ Page({
   closeEditor() {
     this.setData({
       showEditorModal: false,
-      editorMode: "create",
-      editorEntryMode: "single",
-      editorForm: hydrateEditorForm(createEmptyEditorForm()),
     });
   },
 
@@ -1372,10 +1717,46 @@ Page({
     }
   },
 
-  switchEditorEntryMode(e) {
-    this.setData({
-      editorEntryMode: normalizeEntryMode(e.currentTarget.dataset.mode),
+  async switchEditorEntryMode(e) {
+    const nextMode = normalizeEntryMode(e.currentTarget.dataset.mode);
+    if (nextMode === this.data.editorEntryMode) {
+      return;
+    }
+    if (!this.ensureCloudEnv()) {
+      return;
+    }
+
+    wx.showLoading({
+      title: "准备中...",
     });
+    try {
+      if (nextMode === "grouped") {
+        const childCount = normalizeArray(this.data.editorForm.grouped.children).length || 2;
+        const draftSession = await this.ensureDraftSession(nextMode, { childCount });
+        this.setEditorForm((form) => {
+          form.grouped.groupId = draftSession.groupId;
+          const questionIds = normalizeArray(draftSession.questionIds);
+          const nextChildren = normalizeArray(form.grouped.children);
+          for (let i = 0; i < nextChildren.length; i += 1) {
+            nextChildren[i].questionId = questionIds[i] || nextChildren[i].questionId || "";
+          }
+        });
+      } else {
+        const draftSession = await this.ensureDraftSession(nextMode);
+        this.setEditorForm((form) => {
+          form.single.questionId = draftSession.questionId;
+        });
+      }
+
+      this.setData({
+        editorEntryMode: nextMode,
+        lastDraftEntryMode: nextMode,
+      });
+    } catch (error) {
+      this.showCloudTip("切换录入模式失败", getErrorMessage(error));
+    } finally {
+      wx.hideLoading();
+    }
   },
 
   onStemTextInput(e) {
@@ -1762,10 +2143,37 @@ Page({
     });
   },
 
-  addChildQuestion() {
-    this.setEditorForm((form) => {
-      form.grouped.children.push(createSingleQuestionForm());
+  async addChildQuestion() {
+    const draftSession = this.getDraftSession("grouped");
+    if (!isDraftSessionAvailable(draftSession)) {
+      this.showCloudTip("创建会话缺失", "请重新打开关联题创建窗口。");
+      return;
+    }
+    wx.showLoading({
+      title: "准备中...",
     });
+    try {
+      const result = await this.callQuestionFunction("appendDraftGroupQuestionIds", {
+        draftToken: draftSession.draftToken,
+        appendCount: 1,
+      });
+      const data = result && result.data ? result.data : result;
+      const nextQuestionIds = normalizeArray(data.questionIds);
+      const allQuestionIds = normalizeArray(data.allQuestionIds);
+      this.setDraftSession("grouped", assignObject({}, draftSession, {
+        questionIds: allQuestionIds.length ? allQuestionIds : appendArrays(draftSession.questionIds, nextQuestionIds),
+        expiresAt: Number(data.expiresAt || draftSession.expiresAt),
+      }));
+      this.setEditorForm((form) => {
+        const nextChild = createSingleQuestionForm();
+        nextChild.questionId = nextQuestionIds[0] || "";
+        form.grouped.children.push(nextChild);
+      });
+    } catch (error) {
+      this.showCloudTip("新增子题失败", getErrorMessage(error));
+    } finally {
+      wx.hideLoading();
+    }
   },
 
   removeChildQuestion(e) {
@@ -1805,8 +2213,7 @@ Page({
     });
   },
 
-  async uploadImagesToCloud(prefix) {
-    const runtimeStorageInfo = getRuntimeStorageInfo();
+  async uploadImagesToCloud() {
     return new Promise((resolve, reject) => {
       wx.chooseMedia({
         count: 9,
@@ -1815,15 +2222,7 @@ Page({
         success: async (chooseResult) => {
           try {
             const files = normalizeArray(chooseResult.tempFiles);
-            const uploads = await Promise.all(
-              files.map((file, index) =>
-                wx.cloud.uploadFile({
-                  cloudPath: `${runtimeStorageInfo.storageRoot}/temp/${prefix}/${Date.now()}-${index}.png`,
-                  filePath: file.tempFilePath,
-                })
-              )
-            );
-            resolve(uploads.map((item) => item.fileID));
+            resolve(files.map((file) => normalizeString(file.tempFilePath)).filter(Boolean));
           } catch (error) {
             reject(error);
           }
@@ -2031,7 +2430,14 @@ Page({
       this.showCloudTip("题目不可编辑", "题目当前不支持直接编辑，请删除后重新创建。");
       return;
     }
-    const payload = clone(validation.data);
+    const draftSession = this.getDraftSession(this.data.editorEntryMode);
+    if (!isDraftSessionAvailable(draftSession)) {
+      this.showCloudTip("创建会话失效", "当前创建会话不存在，请重新创建后再保存。");
+      return;
+    }
+
+    let payload = this.buildCreatePayloadWithDraft(clone(validation.data), draftSession);
+    let uploadedFileIds = [];
 
     let loadingVisible = true;
     wx.showLoading({
@@ -2042,8 +2448,21 @@ Page({
     });
 
     try {
+      if (isDraftExpired(draftSession)) {
+        throw new Error("创建会话已过期，请重新创建后再保存。");
+      }
+
+      const uploadResult = await this.uploadResourcesForPayload(payload, draftSession, uploadedFileIds);
+      payload = uploadResult.payload;
+      uploadedFileIds = uploadResult.uploadedFileIds;
       const actionType = isGrouped ? "createQuestionGroup" : "createQuestion";
-      const result = await this.callQuestionFunction(actionType, payload);
+      const result = await this.callQuestionFunction(actionType, assignObject({}, payload, {
+        draftToken: draftSession.draftToken,
+      }));
+
+      this.setDraftSession(this.data.editorEntryMode, assignObject({}, draftSession, {
+        status: "committed",
+      }));
 
       if (isGrouped) {
         const targetGroupId =
@@ -2072,14 +2491,27 @@ Page({
         title: "保存成功",
         icon: "success",
       });
-      this.closeEditor();
+      this.resetEditorState();
       await this.refreshQuestionSummaries(false);
     } catch (error) {
       const errMsg = getErrorMessage(error);
+      if (uploadedFileIds.length) {
+        try {
+          await this.cleanupDraftResources(this.data.editorEntryMode, uploadedFileIds);
+        } catch (cleanupError) {
+          this.setDraftSession(this.data.editorEntryMode, assignObject({}, draftSession, {
+            status: "failed",
+          }));
+        }
+      } else {
+        this.setDraftSession(this.data.editorEntryMode, assignObject({}, draftSession, {
+          status: "failed",
+        }));
+      }
       if (isTimeoutError(errMsg)) {
         this.showCloudTip(
           "保存题目超时",
-          "保存请求超时，请确认云函数与云数据库状态正常后重试。"
+          "保存请求超时，已保留当前内容。请稍后重试。"
         );
       } else {
         this.showCloudTip("保存题目失败", errMsg);

@@ -1,6 +1,6 @@
 const crypto = require("crypto");
 const cloud = require("wx-server-sdk");
-const { db } = require("./db");
+const { db, _ } = require("./db");
 const {
   QUESTION_TYPE_CHOICE,
   CONTENT_SOURCE_TEXT,
@@ -31,6 +31,13 @@ const TEMP_RESOURCE_PREFIX = "temp/";
 const SINGLE_RESOURCE_PREFIX = "Resources/single";
 const GROUP_RESOURCE_PREFIX = "Resources/group";
 const CLOUD_DELETE_BATCH_SIZE = 50;
+const DB_IN_QUERY_BATCH_SIZE = 100;
+const QUESTION_DRAFT_EXPIRE_MS = 24 * 60 * 60 * 1000;
+const QUESTION_DRAFT_STATUS_PREPARED = "prepared";
+const QUESTION_DRAFT_STATUS_SAVING = "saving";
+const QUESTION_DRAFT_STATUS_FAILED = "failed";
+const QUESTION_DRAFT_STATUS_COMMITTED = "committed";
+const QUESTION_DRAFT_STATUS_ABANDONED = "abandoned";
 
 const cloneJson = (value) => JSON.parse(JSON.stringify(value));
 
@@ -322,6 +329,11 @@ const normalizeGroupedChildren = (children, sharedStem) => {
   }));
 };
 
+const generateDraftToken = () =>
+  `draft_${crypto.randomBytes(18).toString("hex")}`;
+
+const getDraftExpireAt = () => Date.now() + QUESTION_DRAFT_EXPIRE_MS;
+
 const generateQuestionId = async (questionsCollectionName) => {
   for (let i = 0; i < 8; i += 1) {
     const candidate = `q_${crypto.randomBytes(16).toString("hex")}`;
@@ -359,6 +371,52 @@ const getQuestionById = async (questionId, questionsCollectionName) => {
     .limit(1)
     .get();
   return resp.data?.[0] || null;
+};
+
+const getDraftByToken = async (draftToken, openid, questionDraftsCollectionName) => {
+  const resp = await db
+    .collection(questionDraftsCollectionName)
+    .where({ draftToken, openid })
+    .limit(1)
+    .get();
+  return resp.data?.[0] || null;
+};
+
+const updateDraftRecord = async (draftRecord, questionDraftsCollectionName, data) => {
+  if (!draftRecord?._id) {
+    throw new Error("草稿记录不存在");
+  }
+  await db.collection(questionDraftsCollectionName).doc(draftRecord._id).update({
+    data: {
+      ...data,
+      updateTime: Date.now(),
+    },
+  });
+};
+
+const getQuestionsByIds = async (questionIds, questionsCollectionName) => {
+  const normalizedIds = [...new Set(
+    (questionIds || []).map((item) => normalizeString(item)).filter(Boolean)
+  )];
+  if (!normalizedIds.length) {
+    return new Map();
+  }
+
+  const records = [];
+  for (let i = 0; i < normalizedIds.length; i += DB_IN_QUERY_BATCH_SIZE) {
+    const batchIds = normalizedIds.slice(i, i + DB_IN_QUERY_BATCH_SIZE);
+    const resp = await db
+      .collection(questionsCollectionName)
+      .where({
+        questionId: _.in(batchIds),
+      })
+      .get();
+    records.push(...(resp.data || []));
+  }
+
+  return new Map(
+    records.map((item) => [normalizeString(item?.questionId), item])
+  );
 };
 
 const getQuestionsByGroupId = async (groupId, questionsCollectionName) => {
@@ -470,6 +528,29 @@ const buildSingleResourcePrefix = (storageRoot) =>
 
 const buildGroupResourcePrefix = (storageRoot) =>
   `${normalizeStorageRoot(storageRoot) || STORAGE_ROOT_RELEASE}/${GROUP_RESOURCE_PREFIX}`;
+
+const buildSingleDraftResourceBasePath = (storageRoot, questionId) =>
+  `${buildSingleResourcePrefix(storageRoot)}/${questionId}`;
+
+const buildGroupDraftResourceBasePath = (storageRoot, groupId) =>
+  `${buildGroupResourcePrefix(storageRoot)}/${groupId}`;
+
+const buildDraftResponse = (draftRecord) => ({
+  draftToken: normalizeString(draftRecord?.draftToken),
+  entryMode: validateEntryMode(draftRecord?.entryMode || ENTRY_MODE_SINGLE),
+  storageRoot: normalizeStorageRoot(draftRecord?.storageRoot),
+  questionId: normalizeString(draftRecord?.questionId),
+  groupId: normalizeString(draftRecord?.groupId),
+  questionIds: Array.isArray(draftRecord?.questionIds)
+    ? draftRecord.questionIds.map((item) => normalizeString(item)).filter(Boolean)
+    : [],
+  resourceBasePath:
+    normalizeString(draftRecord?.entryMode) === ENTRY_MODE_GROUPED
+      ? buildGroupDraftResourceBasePath(draftRecord?.storageRoot, draftRecord?.groupId)
+      : buildSingleDraftResourceBasePath(draftRecord?.storageRoot, draftRecord?.questionId),
+  status: normalizeString(draftRecord?.status || QUESTION_DRAFT_STATUS_PREPARED),
+  expiresAt: Number(draftRecord?.expiresAt || 0),
+});
 
 const getFileExtensionFromFileId = (fileId) => {
   const normalized = normalizeString(fileId);
@@ -642,6 +723,70 @@ const extractGroupResourceFileIds = (questions) => {
   return [...fileIdSet];
 };
 
+const collectFileIdsFromValidatedSingle = (question) =>
+  extractQuestionResourceFileIds(question);
+
+const collectFileIdsFromValidatedGroup = (sharedStem, children) => {
+  const fileIds = [...extractFileIdsFromRichContent(sharedStem)];
+  (children || []).forEach((child) => {
+    fileIds.push(...extractFileIdsFromRichContent(child.stem));
+    fileIds.push(...extractFileIdsFromOptions(child.options, child.optionMode));
+  });
+  return [...new Set(fileIds.map((item) => normalizeString(item)).filter(Boolean))];
+};
+
+const isCloudFileId = (fileId) => normalizeString(fileId).startsWith("cloud://");
+
+const assertNoTempResourceFileIds = (fileIds) => {
+  const tempFileId = (fileIds || []).find((fileId) => isTempFileId(fileId));
+  if (tempFileId) {
+    throw new Error("提交数据仍包含临时文件，请重新上传后再保存");
+  }
+  const invalidFileId = (fileIds || []).find((fileId) => !isCloudFileId(fileId));
+  if (invalidFileId) {
+    throw new Error("图片资源必须为云文件 fileID");
+  }
+};
+
+const isDraftExpired = (draftRecord) => Number(draftRecord?.expiresAt || 0) <= Date.now();
+
+const ensureDraftActive = (draftRecord, expectedEntryMode) => {
+  if (!draftRecord) {
+    throw new Error("创建会话不存在，请重新创建");
+  }
+  if (normalizeString(draftRecord.status) === QUESTION_DRAFT_STATUS_ABANDONED) {
+    throw new Error("创建会话已废弃，请重新创建");
+  }
+  if (normalizeString(draftRecord.status) === QUESTION_DRAFT_STATUS_COMMITTED) {
+    throw new Error("创建会话已提交，请重新创建");
+  }
+  if (isDraftExpired(draftRecord)) {
+    throw new Error("创建会话已过期，请重新创建");
+  }
+  if (expectedEntryMode && normalizeString(draftRecord.entryMode) !== expectedEntryMode) {
+    throw new Error("创建会话类型不匹配");
+  }
+};
+
+const isFileIdUnderDraftScope = (fileId, draftRecord) => {
+  const normalizedFileId = normalizeString(fileId);
+  if (!normalizedFileId) {
+    return false;
+  }
+  if (normalizeString(draftRecord?.entryMode) === ENTRY_MODE_GROUPED) {
+    return normalizedFileId.includes(`${buildGroupDraftResourceBasePath(draftRecord?.storageRoot, draftRecord?.groupId)}/`);
+  }
+  return normalizedFileId.includes(`${buildSingleDraftResourceBasePath(draftRecord?.storageRoot, draftRecord?.questionId)}/`);
+};
+
+const assertFileIdsWithinDraftScope = (fileIds, draftRecord) => {
+  (fileIds || []).forEach((fileId) => {
+    if (!isFileIdUnderDraftScope(fileId, draftRecord)) {
+      throw new Error("图片资源不属于当前创建会话");
+    }
+  });
+};
+
 const deleteCloudFiles = async (fileIds) => {
   const normalizedFileIds = [...new Set((fileIds || []).map((item) => normalizeString(item)).filter(Boolean))];
   for (let i = 0; i < normalizedFileIds.length; i += CLOUD_DELETE_BATCH_SIZE) {
@@ -677,61 +822,80 @@ const safeDeleteCloudFiles = async (fileIds) => {
 
 const materializeRichContentResources = async (content, basePath, kind, suffix = "") => {
   const nextContent = cloneJson(content || {});
-  const createdFileIds = [];
-
-  const nextImageFileIds = [];
   const imageFileIds = Array.isArray(nextContent.imageFileIds) ? nextContent.imageFileIds : [];
-  for (let i = 0; i < imageFileIds.length; i += 1) {
-    const fileId = normalizeString(imageFileIds[i]);
+  const imageResults = await Promise.all(imageFileIds.map(async (item, index) => {
+    const fileId = normalizeString(item);
     if (!fileId) {
-      continue;
+      return null;
     }
     if (!isTempFileId(fileId)) {
-      nextImageFileIds.push(fileId);
-      continue;
+      return {
+        fileId,
+        createdFileId: "",
+      };
     }
 
     const targetFileId = await copyCloudFileToResource(
       fileId,
-      buildResourceCloudPath(basePath, kind, fileId, `${suffix}${suffix ? "-" : ""}${i + 1}`),
+      buildResourceCloudPath(basePath, kind, fileId, `${suffix}${suffix ? "-" : ""}${index + 1}`),
     );
-    nextImageFileIds.push(targetFileId);
-    createdFileIds.push(targetFileId);
-  }
-  nextContent.imageFileIds = nextImageFileIds;
+    return {
+      fileId: targetFileId,
+      createdFileId: targetFileId,
+    };
+  }));
+
+  nextContent.imageFileIds = imageResults
+    .map((item) => item?.fileId || "")
+    .filter(Boolean);
 
   return {
     content: nextContent,
-    createdFileIds,
+    createdFileIds: imageResults
+      .map((item) => item?.createdFileId || "")
+      .filter(Boolean),
   };
 };
 
 const materializeOptionsResources = async (options, optionMode, basePath, suffix = "") => {
   const nextOptions = cloneJson(options || {});
-  const createdFileIds = [];
 
   if (optionMode === OPTION_MODE_PER_OPTION) {
     nextOptions.items = Array.isArray(nextOptions.items) ? nextOptions.items : [];
-    for (let i = 0; i < nextOptions.items.length; i += 1) {
-      const item = nextOptions.items[i];
+    const itemResults = await Promise.all(nextOptions.items.map(async (item, index) => {
       if (normalizeString(item?.sourceType) !== CONTENT_SOURCE_IMAGE) {
-        continue;
+        return {
+          item,
+          createdFileId: "",
+        };
       }
       const fileId = normalizeString(item?.imageFileId);
       if (!fileId || !isTempFileId(fileId)) {
-        continue;
+        return {
+          item,
+          createdFileId: "",
+        };
       }
-      const optionKey = sanitizePathSegment(item.key || `option-${i + 1}`, `option-${i + 1}`);
+      const optionKey = sanitizePathSegment(item.key || `option-${index + 1}`, `option-${index + 1}`);
       const targetFileId = await copyCloudFileToResource(
         fileId,
         buildResourceCloudPath(basePath, "option", fileId, `${suffix}${suffix ? "-" : ""}${optionKey}`),
       );
-      nextOptions.items[i] = {
-        ...item,
-        imageFileId: targetFileId,
+      return {
+        item: {
+          ...item,
+          imageFileId: targetFileId,
+        },
+        createdFileId: targetFileId,
       };
-      createdFileIds.push(targetFileId);
-    }
+    }));
+    nextOptions.items = itemResults.map((item) => item.item);
+    return {
+      options: nextOptions,
+      createdFileIds: itemResults
+        .map((item) => item.createdFileId || "")
+        .filter(Boolean),
+    };
   }
 
   if (optionMode === OPTION_MODE_GROUPED_ASSET) {
@@ -745,13 +909,16 @@ const materializeOptionsResources = async (options, optionMode, basePath, suffix
         ...nextOptions.groupedAsset,
         imageFileId: targetFileId,
       };
-      createdFileIds.push(targetFileId);
+      return {
+        options: nextOptions,
+        createdFileIds: [targetFileId],
+      };
     }
   }
 
   return {
     options: nextOptions,
-    createdFileIds,
+    createdFileIds: [],
   };
 };
 
@@ -802,31 +969,40 @@ const materializeGroupResources = async (sharedStem, children, groupId, storageR
   const finalSharedStem = sharedStemResult.content;
   createdFileIds.push(...sharedStemResult.createdFileIds);
 
-  const finalChildren = [];
-  for (let i = 0; i < children.length; i += 1) {
-    const child = cloneJson(children[i]);
+  const childResults = await Promise.all(children.map(async (sourceChild, index) => {
+    const child = cloneJson(sourceChild);
     child.sharedStem = finalSharedStem;
 
     const stemResult = await materializeRichContentResources(
       child.stem,
       basePath,
       "stem",
-      String(i + 1),
+      String(index + 1),
     );
     child.stem = stemResult.content;
-    createdFileIds.push(...stemResult.createdFileIds);
 
     const optionsResult = await materializeOptionsResources(
       child.options,
       child.optionMode,
       basePath,
-      String(i + 1),
+      String(index + 1),
     );
     child.options = optionsResult.options;
-    createdFileIds.push(...optionsResult.createdFileIds);
 
-    finalChildren.push(child);
-  }
+    return {
+      child,
+      createdFileIds: [
+        ...stemResult.createdFileIds,
+        ...optionsResult.createdFileIds,
+      ],
+    };
+  }));
+
+  const finalChildren = [];
+  childResults.forEach((result) => {
+    createdFileIds.push(...result.createdFileIds);
+    finalChildren.push(result.child);
+  });
 
   return {
     sharedStem: finalSharedStem,
@@ -1081,6 +1257,168 @@ const getEventPayload = (event) => {
   delete payload.type;
   return payload;
 };
+
+const createDraftRecord = async (user, collections, payload) => {
+  const now = Date.now();
+  const draftToken = generateDraftToken();
+  const childCount = Math.max(2, Number(payload?.childCount || 2));
+  const storageRoot =
+    normalizeStorageRoot(payload?.storageRoot) ||
+    resolveStorageRootFromRuntimeEnvVersion(payload?.runtimeEnvVersion);
+
+  if (normalizeString(payload?.entryMode) === ENTRY_MODE_GROUPED) {
+    const groupId = await generateGroupId(collections.questions);
+    const questionIds = [];
+    for (let i = 0; i < childCount; i += 1) {
+      questionIds.push(await generateQuestionId(collections.questions));
+    }
+    const record = {
+      draftToken,
+      openid: user.openid,
+      entryMode: ENTRY_MODE_GROUPED,
+      storageRoot,
+      questionId: "",
+      groupId,
+      questionIds,
+      status: QUESTION_DRAFT_STATUS_PREPARED,
+      uploadedFileIds: [],
+      createTime: now,
+      updateTime: now,
+      expiresAt: getDraftExpireAt(),
+    };
+    await db.collection(collections.questionDrafts).add({ data: record });
+    return record;
+  }
+
+  const questionId = await generateQuestionId(collections.questions);
+  const record = {
+    draftToken,
+    openid: user.openid,
+    entryMode: ENTRY_MODE_SINGLE,
+    storageRoot,
+    questionId,
+    groupId: "",
+    questionIds: [],
+    status: QUESTION_DRAFT_STATUS_PREPARED,
+    uploadedFileIds: [],
+    createTime: now,
+    updateTime: now,
+    expiresAt: getDraftExpireAt(),
+  };
+  await db.collection(collections.questionDrafts).add({ data: record });
+  return record;
+};
+
+const prepareCreateQuestionDraft = async (event) => {
+  const user = await requireAdmin(event);
+  const collections = getCollections(event);
+  const draftRecord = await createDraftRecord(user, collections, {
+    ...getEventPayload(event),
+    entryMode: ENTRY_MODE_SINGLE,
+  });
+  return ok(buildDraftResponse(draftRecord));
+};
+
+const prepareCreateQuestionGroupDraft = async (event) => {
+  const user = await requireAdmin(event);
+  const collections = getCollections(event);
+  const draftRecord = await createDraftRecord(user, collections, {
+    ...getEventPayload(event),
+    entryMode: ENTRY_MODE_GROUPED,
+  });
+  return ok(buildDraftResponse(draftRecord));
+};
+
+const appendDraftGroupQuestionIds = async (event) => {
+  const user = await requireAdmin(event);
+  const collections = getCollections(event);
+  const payload = getEventPayload(event);
+  const draftToken = normalizeString(payload?.draftToken);
+  const appendCount = Math.max(1, Number(payload?.appendCount || 1));
+  if (!draftToken) {
+    return fail("draftToken 不能为空");
+  }
+  const draftRecord = await getDraftByToken(
+    draftToken,
+    user.openid,
+    collections.questionDrafts,
+  );
+  ensureDraftActive(draftRecord, ENTRY_MODE_GROUPED);
+
+  const nextQuestionIds = [];
+  for (let i = 0; i < appendCount; i += 1) {
+    nextQuestionIds.push(await generateQuestionId(collections.questions));
+  }
+  const questionIds = [
+    ...(Array.isArray(draftRecord.questionIds) ? draftRecord.questionIds : []),
+    ...nextQuestionIds,
+  ];
+  await updateDraftRecord(draftRecord, collections.questionDrafts, {
+    questionIds,
+    status: QUESTION_DRAFT_STATUS_PREPARED,
+    expiresAt: getDraftExpireAt(),
+  });
+  return ok({
+    draftToken,
+    questionIds: nextQuestionIds,
+    allQuestionIds: questionIds,
+    expiresAt: getDraftExpireAt(),
+  });
+};
+
+const cleanupDraftResources = async (event) => {
+  const user = await requireAdmin(event);
+  const collections = getCollections(event);
+  const payload = getEventPayload(event);
+  const draftToken = normalizeString(payload?.draftToken);
+  if (!draftToken) {
+    return fail("draftToken 不能为空");
+  }
+  const draftRecord = await getDraftByToken(
+    draftToken,
+    user.openid,
+    collections.questionDrafts,
+  );
+  if (!draftRecord) {
+    return ok({ draftToken, cleanedFileIds: [] });
+  }
+
+  const requestedFileIds = Array.isArray(payload?.uploadedFileIds)
+    ? payload.uploadedFileIds.map((item) => normalizeString(item)).filter(Boolean)
+    : [];
+  const currentUploaded = Array.isArray(draftRecord.uploadedFileIds)
+    ? draftRecord.uploadedFileIds.map((item) => normalizeString(item)).filter(Boolean)
+    : [];
+  const cleanupTargets = requestedFileIds.length
+    ? currentUploaded.filter((fileId) => requestedFileIds.includes(fileId))
+    : currentUploaded;
+
+  await deleteCloudFiles(cleanupTargets);
+  const cleanedSet = new Set(cleanupTargets);
+  const remainingFileIds = currentUploaded.filter((fileId) => !cleanedSet.has(fileId));
+  await updateDraftRecord(draftRecord, collections.questionDrafts, {
+    uploadedFileIds: remainingFileIds,
+    status:
+      normalizeString(payload?.status) === QUESTION_DRAFT_STATUS_ABANDONED
+        ? QUESTION_DRAFT_STATUS_ABANDONED
+        : QUESTION_DRAFT_STATUS_FAILED,
+    expiresAt: getDraftExpireAt(),
+  });
+  return ok({
+    draftToken,
+    cleanedFileIds: cleanupTargets,
+    remainingFileIds,
+  });
+};
+
+const abandonDraft = async (event) =>
+  cleanupDraftResources({
+    ...event,
+    data: {
+      ...getEventPayload(event),
+      status: QUESTION_DRAFT_STATUS_ABANDONED,
+    },
+  });
 
 const listQuestions = async (event) => {
   const user = await ensureUserRecord(event);
@@ -1407,9 +1745,13 @@ const submitPracticePaper = async (event) => {
   const questionSnapshots = [];
   let answeredCount = 0;
   let correctCount = 0;
+  const latestQuestionMap = await getQuestionsByIds(
+    snapshotQuestions.map((item) => item.questionId),
+    collections.questions,
+  );
 
   for (const snapshotQuestion of snapshotQuestions) {
-    const latestQuestion = await getQuestionById(snapshotQuestion.questionId, collections.questions);
+    const latestQuestion = latestQuestionMap.get(snapshotQuestion.questionId) || null;
     const answer = answerMap.get(snapshotQuestion.questionId) || {
       questionId: snapshotQuestion.questionId,
       selectedOptionKeys: [],
@@ -1655,28 +1997,52 @@ const buildSingleQuestionDocument = async (payload, user, existingQuestion = nul
 const createQuestion = async (event) => {
   const user = await requireAdmin(event);
   const collections = getCollections(event);
-  const validated = normalizeSingleQuestionPayload(getEventPayload(event));
+  const payload = getEventPayload(event);
+  const draftToken = normalizeString(payload?.draftToken);
+  if (!draftToken) {
+    return fail("draftToken 不能为空");
+  }
+  const draftRecord = await getDraftByToken(
+    draftToken,
+    user.openid,
+    collections.questionDrafts,
+  );
+  ensureDraftActive(draftRecord, ENTRY_MODE_SINGLE);
+
+  const validated = normalizeSingleQuestionPayload({
+    ...payload,
+    questionId: draftRecord.questionId,
+  }, { requireQuestionId: true });
   const storageRoot = resolveStorageRoot(event, validated);
+  if (storageRoot !== normalizeStorageRoot(draftRecord.storageRoot)) {
+    return fail("storageRoot 与创建会话不一致");
+  }
+
+  const allFileIds = collectFileIdsFromValidatedSingle(validated);
+  assertNoTempResourceFileIds(allFileIds);
+  assertFileIdsWithinDraftScope(allFileIds, draftRecord);
   const now = Date.now();
-  const questionId = await generateQuestionId(collections.questions);
-  const createdResourceFileIds = [];
+  let createdQuestionDocId = "";
 
   try {
-    const materialized = await materializeSingleQuestionResources(validated, questionId, storageRoot);
-    createdResourceFileIds.push(...materialized.createdFileIds);
+    await updateDraftRecord(draftRecord, collections.questionDrafts, {
+      uploadedFileIds: allFileIds,
+      status: QUESTION_DRAFT_STATUS_SAVING,
+      expiresAt: getDraftExpireAt(),
+    });
 
-    await db.collection(collections.questions).add({
+    const addResult = await db.collection(collections.questions).add({
       data: {
-        questionId,
-        questionLabel: materialized.question.questionLabel,
+        questionId: validated.questionId,
+        questionLabel: validated.questionLabel,
         groupId: "",
-        questionType: materialized.question.questionType,
+        questionType: validated.questionType,
         entryMode: ENTRY_MODE_SINGLE,
-        sharedStem: materialized.question.sharedStem,
-        stem: materialized.question.stem,
-        optionMode: materialized.question.optionMode,
-        options: materialized.question.options,
-        correctOptionKeys: materialized.question.correctOptionKeys,
+        sharedStem: validated.sharedStem,
+        stem: validated.stem,
+        optionMode: validated.optionMode,
+        options: validated.options,
+        correctOptionKeys: validated.correctOptionKeys,
         groupOrder: 1,
         createTime: now,
         updateTime: now,
@@ -1684,10 +2050,38 @@ const createQuestion = async (event) => {
         updatedBy: user.openid,
       },
     });
+    createdQuestionDocId = addResult?._id || "";
 
-    return ok({ questionId });
+    const persisted = await getQuestionById(validated.questionId, collections.questions);
+    const persistedFileIds = collectFileIdsFromValidatedSingle(persisted || {});
+    if (!persisted || persisted.questionId !== validated.questionId) {
+      throw new Error("题目保存校验失败");
+    }
+    if (JSON.stringify([...persistedFileIds].sort()) !== JSON.stringify([...allFileIds].sort())) {
+      throw new Error("题目图片保存校验失败");
+    }
+
+    await updateDraftRecord(draftRecord, collections.questionDrafts, {
+      uploadedFileIds: allFileIds,
+      status: QUESTION_DRAFT_STATUS_COMMITTED,
+      expiresAt: getDraftExpireAt(),
+    });
+
+    return ok({ questionId: validated.questionId, draftToken });
   } catch (error) {
-    await safeDeleteCloudFiles(createdResourceFileIds);
+    if (createdQuestionDocId) {
+      try {
+        await db.collection(collections.questions).doc(createdQuestionDocId).remove();
+      } catch (removeError) {
+        // Best effort rollback.
+      }
+    }
+    await safeDeleteCloudFiles(allFileIds);
+    await updateDraftRecord(draftRecord, collections.questionDrafts, {
+      uploadedFileIds: [],
+      status: QUESTION_DRAFT_STATUS_FAILED,
+      expiresAt: getDraftExpireAt(),
+    }).catch(() => {});
     return fail(error);
   }
 };
@@ -1699,6 +2093,16 @@ const createQuestionGroup = async (event) => {
   const user = await requireAdmin(event);
   const collections = getCollections(event);
   const payload = getEventPayload(event);
+  const draftToken = normalizeString(payload?.draftToken);
+  if (!draftToken) {
+    return fail("draftToken 不能为空");
+  }
+  const draftRecord = await getDraftByToken(
+    draftToken,
+    user.openid,
+    collections.questionDrafts,
+  );
+  ensureDraftActive(draftRecord, ENTRY_MODE_GROUPED);
   const sharedStem = normalizeRichStem(payload?.sharedStem, "sharedStem");
   const children = normalizeGroupedChildren(payload?.children, sharedStem);
   const storageRoot = resolveStorageRoot(
@@ -1709,29 +2113,56 @@ const createQuestionGroup = async (event) => {
     },
     { grouped: true },
   );
-  const groupId = await generateGroupId(collections.questions);
+  if (storageRoot !== normalizeStorageRoot(draftRecord.storageRoot)) {
+    return fail("storageRoot 与创建会话不一致");
+  }
+  const draftQuestionIds = new Set(
+    Array.isArray(draftRecord.questionIds)
+      ? draftRecord.questionIds.map((item) => normalizeString(item)).filter(Boolean)
+      : []
+  );
+  const childrenWithIds = children.map((child) => ({
+    ...child,
+    questionId: normalizeString(child.questionId),
+  }));
+  if (!childrenWithIds.length) {
+    return fail("题组至少需要一个子题");
+  }
+  const usedQuestionIds = new Set();
+  for (const child of childrenWithIds) {
+    if (!child.questionId) {
+      return fail("题组子题缺少预分配 questionId");
+    }
+    if (!draftQuestionIds.has(child.questionId)) {
+      return fail("题组子题不属于当前创建会话");
+    }
+    if (usedQuestionIds.has(child.questionId)) {
+      return fail("题组子题 questionId 重复");
+    }
+    usedQuestionIds.add(child.questionId);
+  }
+  const allFileIds = collectFileIdsFromValidatedGroup(sharedStem, childrenWithIds);
+  assertNoTempResourceFileIds(allFileIds);
+  assertFileIdsWithinDraftScope(allFileIds, draftRecord);
   const now = Date.now();
-  const createdResourceFileIds = [];
+  const createdQuestionDocIds = [];
 
   try {
-    const materialized = await materializeGroupResources(
-      sharedStem,
-      children,
-      groupId,
-      storageRoot,
-    );
-    createdResourceFileIds.push(...materialized.createdFileIds);
+    await updateDraftRecord(draftRecord, collections.questionDrafts, {
+      uploadedFileIds: allFileIds,
+      status: QUESTION_DRAFT_STATUS_SAVING,
+      expiresAt: getDraftExpireAt(),
+    });
 
-    for (const child of materialized.children) {
-      const questionId = await generateQuestionId(collections.questions);
-      await db.collection(collections.questions).add({
+    for (const child of childrenWithIds) {
+      const addResult = await db.collection(collections.questions).add({
         data: {
-          questionId,
+          questionId: child.questionId,
           questionLabel: child.questionLabel,
-          groupId,
+          groupId: draftRecord.groupId,
           questionType: child.questionType,
           entryMode: ENTRY_MODE_GROUPED,
-          sharedStem: materialized.sharedStem,
+          sharedStem,
           stem: child.stem,
           optionMode: child.optionMode,
           options: child.options,
@@ -1743,11 +2174,45 @@ const createQuestionGroup = async (event) => {
           updatedBy: user.openid,
         },
       });
+      createdQuestionDocIds.push(addResult?._id || "");
     }
 
-    return ok({ groupId });
+    const persisted = await getQuestionsByGroupId(draftRecord.groupId, collections.questions);
+    if (persisted.length !== childrenWithIds.length) {
+      throw new Error("题组保存校验失败");
+    }
+    const persistedFileIds = collectFileIdsFromValidatedGroup(
+      sharedStem,
+      persisted,
+    );
+    if (JSON.stringify([...persistedFileIds].sort()) !== JSON.stringify([...allFileIds].sort())) {
+      throw new Error("题组图片保存校验失败");
+    }
+
+    await updateDraftRecord(draftRecord, collections.questionDrafts, {
+      uploadedFileIds: allFileIds,
+      status: QUESTION_DRAFT_STATUS_COMMITTED,
+      expiresAt: getDraftExpireAt(),
+    });
+
+    return ok({ groupId: draftRecord.groupId, draftToken });
   } catch (error) {
-    await safeDeleteCloudFiles(createdResourceFileIds);
+    for (const docId of createdQuestionDocIds) {
+      if (!docId) {
+        continue;
+      }
+      try {
+        await db.collection(collections.questions).doc(docId).remove();
+      } catch (removeError) {
+        // Best effort rollback.
+      }
+    }
+    await safeDeleteCloudFiles(allFileIds);
+    await updateDraftRecord(draftRecord, collections.questionDrafts, {
+      uploadedFileIds: [],
+      status: QUESTION_DRAFT_STATUS_FAILED,
+      expiresAt: getDraftExpireAt(),
+    }).catch(() => {});
     return fail(error);
   }
 };
@@ -1827,6 +2292,16 @@ const dispatch = async (event) => {
       return getPracticeSubmissionDetail(event);
     case "getPracticeSubmissionQuestionDetail":
       return getPracticeSubmissionQuestionDetail(event);
+    case "prepareCreateQuestionDraft":
+      return prepareCreateQuestionDraft(event);
+    case "prepareCreateQuestionGroupDraft":
+      return prepareCreateQuestionGroupDraft(event);
+    case "appendDraftGroupQuestionIds":
+      return appendDraftGroupQuestionIds(event);
+    case "cleanupDraftResources":
+      return cleanupDraftResources(event);
+    case "abandonDraft":
+      return abandonDraft(event);
     case "createQuestion":
       return createQuestion(event);
     case "updateQuestion":

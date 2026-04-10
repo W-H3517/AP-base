@@ -1,6 +1,7 @@
 const USERS_COLLECTION = "users";
 const QUESTIONS_COLLECTION = "questions";
 const PRACTICE_SUBMISSIONS_COLLECTION = "practice_submissions";
+const QUESTION_DRAFTS_COLLECTION = "question_drafts";
 const QUESTION_TYPE_CHOICE = "choice";
 const CONTENT_SOURCE_TEXT = "text";
 const CONTENT_SOURCE_IMAGE = "image";
@@ -20,6 +21,7 @@ const resolveCollectionNames = (runtimeDataVersion) => {
     users: `${USERS_COLLECTION}${suffix}`,
     questions: `${QUESTIONS_COLLECTION}${suffix}`,
     practiceSubmissions: `${PRACTICE_SUBMISSIONS_COLLECTION}${suffix}`,
+    questionDrafts: `${QUESTION_DRAFTS_COLLECTION}${suffix}`,
   };
 };
 
@@ -27,6 +29,7 @@ module.exports = {
   USERS_COLLECTION,
   QUESTIONS_COLLECTION,
   PRACTICE_SUBMISSIONS_COLLECTION,
+  QUESTION_DRAFTS_COLLECTION,
   QUESTION_TYPE_CHOICE,
   CONTENT_SOURCE_TEXT,
   CONTENT_SOURCE_IMAGE,

@@ -10,6 +10,7 @@ const ADMIN_OPENIDS = (process.env.ADMIN_OPENIDS || "")
   .split(",")
   .map((item) => item.trim())
   .filter(Boolean);
+const ensuredCollectionPromises = new Map();
 
 const normalizeRole = (role) => (role === "admin" ? "admin" : "user");
 
@@ -33,11 +34,23 @@ const ensureCollection = async (collectionName) => {
 
 const ensureCollections = async (event) => {
   const collections = getCollections(event);
-  await Promise.all([
-    ensureCollection(collections.users),
-    ensureCollection(collections.questions),
-    ensureCollection(collections.practiceSubmissions),
-  ]);
+  const collectionNames = [
+    collections.users,
+    collections.questions,
+    collections.practiceSubmissions,
+    collections.questionDrafts,
+  ];
+
+  await Promise.all(collectionNames.map((collectionName) => {
+    if (!ensuredCollectionPromises.has(collectionName)) {
+      const promise = ensureCollection(collectionName).catch((error) => {
+        ensuredCollectionPromises.delete(collectionName);
+        throw error;
+      });
+      ensuredCollectionPromises.set(collectionName, promise);
+    }
+    return ensuredCollectionPromises.get(collectionName);
+  }));
 };
 
 const getUserByOpenId = async (openid, event) => {

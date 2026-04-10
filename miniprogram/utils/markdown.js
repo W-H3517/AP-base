@@ -26,10 +26,10 @@ const STEM_MARKDOWN_TAG_STYLE = {
   pre: "margin:0 0 18rpx;padding:20rpx;border-radius:18rpx;background:#0f172a;color:#e2e8f0;white-space:pre-wrap;overflow:auto;",
   code: "font-family:Menlo,Monaco,Consolas,monospace;",
   table:
-    "margin:0 0 18rpx;width:100%;font-size:26rpx;line-height:1.6;border-collapse:collapse;border:1rpx solid #cbd5e1;",
+    "margin:0 0 18rpx;width:100%;font-size:26rpx;line-height:1.6;border-collapse:collapse;border-spacing:0;border:1px solid #cbd5e1;",
   th:
-    "padding:14rpx 16rpx;border:1rpx solid #cbd5e1;background:#eff6ff;color:#0f172a;font-weight:700;",
-  td: "padding:14rpx 16rpx;border:1rpx solid #cbd5e1;color:#334155;",
+    "padding:14rpx 16rpx;border:1px solid #cbd5e1;background:#eff6ff;color:#0f172a;font-weight:700;",
+  td: "padding:14rpx 16rpx;border:1px solid #cbd5e1;color:#334155;",
 };
 
 const OPTION_MARKDOWN_TAG_STYLE = {
@@ -46,10 +46,10 @@ const OPTION_MARKDOWN_TAG_STYLE = {
   pre: "margin:0 0 14rpx;padding:18rpx;border-radius:16rpx;background:#0f172a;color:#e2e8f0;white-space:pre-wrap;overflow:auto;",
   code: "font-family:Menlo,Monaco,Consolas,monospace;",
   table:
-    "margin:0 0 14rpx;width:100%;font-size:26rpx;line-height:1.6;border-collapse:collapse;border:1rpx solid #cbd5e1;",
+    "margin:0 0 14rpx;width:100%;font-size:26rpx;line-height:1.6;border-collapse:collapse;border-spacing:0;border:1px solid #cbd5e1;",
   th:
-    "padding:12rpx 14rpx;border:1rpx solid #cbd5e1;background:#eff6ff;color:#0f172a;font-weight:700;",
-  td: "padding:12rpx 14rpx;border:1rpx solid #cbd5e1;color:#334155;",
+    "padding:12rpx 14rpx;border:1px solid #cbd5e1;background:#eff6ff;color:#0f172a;font-weight:700;",
+  td: "padding:12rpx 14rpx;border:1px solid #cbd5e1;color:#334155;",
 };
 
 function normalizeMarkdownContent(value) {

@@ -273,21 +273,10 @@ function normalizeRichContent(rawContent, legacyImageValue = "") {
     content.imageFileIds || content.imageFileId,
     legacyImageValue
   );
-  const sourceType = normalizeSourceType(
-    content.sourceType,
-    imageFileIds.length ? "image" : "text"
-  );
   const text = normalizeString(content.text);
-  if (sourceType === "text") {
-    return {
-      sourceType: "text",
-      text,
-      imageFileIds: [],
-    };
-  }
   return {
-    sourceType: "image",
-    text: "",
+    sourceType: imageFileIds.length ? "image" : "text",
+    text,
     imageFileIds,
   };
 }
@@ -1389,26 +1378,6 @@ Page({
     });
   },
 
-  switchStemSourceType(e) {
-    const scope = this.getEditorScopeFromEvent(e);
-    const childIndex = this.getChildIndexFromEvent(e);
-    const sourceType = normalizeSourceType(e.currentTarget.dataset.type);
-
-    this.setEditorForm((form) => {
-      const target = getTargetStem(form, scope, childIndex);
-      if (!target) {
-        return;
-      }
-
-      target.sourceType = sourceType;
-      if (sourceType === "text") {
-        target.imageFileIds = [];
-      } else {
-        target.text = "";
-      }
-    });
-  },
-
   onStemTextInput(e) {
     const scope = this.getEditorScopeFromEvent(e);
     const childIndex = this.getChildIndexFromEvent(e);
@@ -1420,6 +1389,7 @@ Page({
         return;
       }
       target.text = value;
+      target.sourceType = normalizeArray(target.imageFileIds).length ? "image" : "text";
     });
   },
 
@@ -1455,9 +1425,8 @@ Page({
         if (!target) {
           return;
         }
-        target.sourceType = "image";
-        target.text = "";
         target.imageFileIds = uniqueArray(appendArrays(target.imageFileIds || [], fileIDs));
+        target.sourceType = target.imageFileIds.length ? "image" : "text";
       });
     } catch (error) {
       this.showCloudTip("上传图片失败", getErrorMessage(error));
@@ -1479,9 +1448,7 @@ Page({
       target.imageFileIds = normalizeArray(target.imageFileIds).filter(
         (_, index) => index !== imageIndex
       );
-      if (!target.imageFileIds.length && target.sourceType === "image") {
-        target.sourceType = "text";
-      }
+      target.sourceType = target.imageFileIds.length ? "image" : "text";
     });
   },
 
@@ -1868,15 +1835,10 @@ Page({
 
   validateRichContent(content, label, allowEmpty = false) {
     const normalized = normalizeRichContent(content);
-    if (normalized.sourceType === "text") {
-      if (!normalized.text && !allowEmpty) {
-        return { valid: false, message: `${label}文本不能为空。` };
-      }
-      return { valid: true, data: normalized };
+    if (!normalized.text && !normalized.imageFileIds.length && !allowEmpty) {
+      return { valid: false, message: `${label}至少填写文本或上传一张图片。` };
     }
-    if (!normalized.imageFileIds.length && !allowEmpty) {
-      return { valid: false, message: `${label}至少上传一张图片。` };
-    }
+    normalized.sourceType = normalized.imageFileIds.length ? "image" : "text";
     return { valid: true, data: normalized };
   },
 

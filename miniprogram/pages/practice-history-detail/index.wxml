@@ -75,21 +75,7 @@
       </view>
 
       <view class="section-title" wx:if="{{currentQuestion.sharedStemVisible}}">公共题干</view>
-      <view class="stem-card" wx:if="{{currentQuestion.sharedStemVisible && currentQuestion.sharedStem.sourceType === 'text'}}">
-        <mp-html
-          wx:if="{{!currentQuestion.sharedStem.renderAsPlainText}}"
-          content="{{currentQuestion.sharedStem.renderedContent}}"
-          markdown="{{true}}"
-          container-style="{{stemMarkdownContainerStyle}}"
-          tag-style="{{stemMarkdownTagStyle}}"
-          preview-img="{{false}}"
-          selectable="{{true}}"
-          data-scope="sharedStem"
-          binderror="onRichTextError"
-        />
-        <view wx:else>{{currentQuestion.sharedStem.text}}</view>
-      </view>
-      <view class="image-list" wx:if="{{currentQuestion.sharedStemVisible && currentQuestion.sharedStem.sourceType === 'image'}}">
+      <view class="image-list" wx:if="{{currentQuestion.sharedStemVisible && currentQuestion.sharedStem.imageFileIds.length}}">
         <view class="stem-image-toolbar">
           <view class="stem-scroll-hint">左右拖动查看完整题干</view>
           <view class="stem-zoom-actions">
@@ -103,23 +89,23 @@
           <image class="stem-content-image" style="height: {{stemImageHeightRpx}}rpx;" mode="heightFix" src="{{item}}" bindtap="previewImage" data-src="{{item}}"></image>
         </scroll-view>
       </view>
-
-      <view class="section-title">题目</view>
-      <view class="stem-card" wx:if="{{currentQuestion.stem.sourceType === 'text'}}">
+      <view class="stem-card" wx:if="{{currentQuestion.sharedStemVisible && currentQuestion.sharedStem.text}}">
         <mp-html
-          wx:if="{{!currentQuestion.stem.renderAsPlainText}}"
-          content="{{currentQuestion.stem.renderedContent}}"
+          wx:if="{{!currentQuestion.sharedStem.renderAsPlainText}}"
+          content="{{currentQuestion.sharedStem.renderedContent}}"
           markdown="{{true}}"
           container-style="{{stemMarkdownContainerStyle}}"
           tag-style="{{stemMarkdownTagStyle}}"
           preview-img="{{false}}"
           selectable="{{true}}"
-          data-scope="stem"
+          data-scope="sharedStem"
           binderror="onRichTextError"
         />
-        <view wx:else>{{currentQuestion.stem.text}}</view>
+        <view wx:else>{{currentQuestion.sharedStem.text}}</view>
       </view>
-      <view class="image-list" wx:if="{{currentQuestion.stem.sourceType === 'image'}}">
+
+      <view class="section-title">题目</view>
+      <view class="image-list" wx:if="{{currentQuestion.stem.imageFileIds.length}}">
         <view class="stem-image-toolbar">
           <view class="stem-scroll-hint">左右拖动查看完整题干</view>
           <view class="stem-zoom-actions">
@@ -132,6 +118,20 @@
         <scroll-view wx:for="{{currentQuestion.stem.imageFileIds}}" wx:key="*this" class="stem-image-scroll" scroll-x enhanced show-scrollbar="true">
           <image class="stem-content-image" style="height: {{stemImageHeightRpx}}rpx;" mode="heightFix" src="{{item}}" bindtap="previewImage" data-src="{{item}}"></image>
         </scroll-view>
+      </view>
+      <view class="stem-card" wx:if="{{currentQuestion.stem.text}}">
+        <mp-html
+          wx:if="{{!currentQuestion.stem.renderAsPlainText}}"
+          content="{{currentQuestion.stem.renderedContent}}"
+          markdown="{{true}}"
+          container-style="{{stemMarkdownContainerStyle}}"
+          tag-style="{{stemMarkdownTagStyle}}"
+          preview-img="{{false}}"
+          selectable="{{true}}"
+          data-scope="stem"
+          binderror="onRichTextError"
+        />
+        <view wx:else>{{currentQuestion.stem.text}}</view>
       </view>
 
       <view class="section-title">我的答案</view>

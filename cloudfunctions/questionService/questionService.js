@@ -68,43 +68,30 @@ const normalizeImageFileIds = (imageFileIds, fieldName) => {
 };
 
 const normalizeRichStem = (content, fieldName, { allowEmpty = false } = {}) => {
-  if (allowEmpty) {
-    const text = normalizeString(content?.text);
-    const imageFileIds = Array.isArray(content?.imageFileIds)
-      ? content.imageFileIds.map((item) => normalizeString(item)).filter(Boolean)
-      : [];
-    if (!text && !imageFileIds.length) {
-      return {};
-    }
-  }
-
-  const sourceType = validateSourceType(
-    normalizeString(content?.sourceType),
-    fieldName,
-  );
   const text = normalizeString(content?.text);
+  const imageFileIds = Array.isArray(content?.imageFileIds)
+    ? content.imageFileIds.map((item) => normalizeString(item)).filter(Boolean)
+    : [];
 
-  if (sourceType === CONTENT_SOURCE_TEXT) {
-    if (!text) {
-      throw new Error(`${fieldName}.text 不能为空`);
-    }
-    const imageFileIds = Array.isArray(content?.imageFileIds)
-      ? content.imageFileIds.map((item) => normalizeString(item)).filter(Boolean)
-      : [];
-    if (imageFileIds.length) {
-      throw new Error(`${fieldName} 为文本时不能同时传 imageFileIds`);
-    }
-    return {
-      sourceType,
-      text,
-      imageFileIds: [],
-    };
+  if (allowEmpty && !text && !imageFileIds.length) {
+    return {};
   }
+
+  if (!text && !imageFileIds.length) {
+    throw new Error(`${fieldName} 的文本和图片不能同时为空`);
+  }
+
+  const sourceType = imageFileIds.length
+    ? CONTENT_SOURCE_IMAGE
+    : validateSourceType(
+        normalizeString(content?.sourceType) || CONTENT_SOURCE_TEXT,
+        fieldName,
+      );
 
   return {
     sourceType,
-    text: "",
-    imageFileIds: normalizeImageFileIds(content?.imageFileIds, fieldName),
+    text,
+    imageFileIds,
   };
 };
 
@@ -412,10 +399,7 @@ const buildStemPreview = (content) => {
     : [];
 
   return {
-    stemText:
-      normalizeString(content?.sourceType) === CONTENT_SOURCE_TEXT
-        ? normalizeString(content?.text)
-        : "",
+    stemText: normalizeString(content?.text),
     hasStemImage: imageFileIds.length > 0,
   };
 };
@@ -558,9 +542,6 @@ const copyCloudFileToResource = async (sourceFileId, cloudPath) => {
 };
 
 const extractFileIdsFromRichContent = (content) => {
-  if (normalizeString(content?.sourceType) !== CONTENT_SOURCE_IMAGE) {
-    return [];
-  }
   return Array.isArray(content?.imageFileIds)
     ? content.imageFileIds.map((item) => normalizeString(item)).filter(Boolean)
     : [];
@@ -697,13 +678,6 @@ const safeDeleteCloudFiles = async (fileIds) => {
 const materializeRichContentResources = async (content, basePath, kind, suffix = "") => {
   const nextContent = cloneJson(content || {});
   const createdFileIds = [];
-
-  if (normalizeString(nextContent?.sourceType) !== CONTENT_SOURCE_IMAGE) {
-    return {
-      content: nextContent,
-      createdFileIds,
-    };
-  }
 
   const nextImageFileIds = [];
   const imageFileIds = Array.isArray(nextContent.imageFileIds) ? nextContent.imageFileIds : [];

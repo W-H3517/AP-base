@@ -51,7 +51,7 @@ function normalizeMarkdownContent(value) {
 
 function attachRenderedRichContent(content) {
   const source = content || {};
-  if (source.sourceType !== "text") {
+  if (!normalizeMarkdownContent(source.text)) {
     return {
       ...source,
       renderedContent: "",

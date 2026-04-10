@@ -154,12 +154,12 @@
         <view class="detail-question-id">题号：{{selectedDetail.questionLabel}}</view>
         <view class="detail-question-id">题目 ID：{{selectedDetail.questionId}}</view>
         <view class="section-title">题干</view>
-        <view wx:if="{{selectedDetail.stem.sourceType === 'text'}}" class="stem-text-card">{{selectedDetail.stem.text}}</view>
-        <view wx:if="{{selectedDetail.stem.sourceType === 'image'}}" class="content-image-list">
+        <view wx:if="{{selectedDetail.stem.imageFileIds.length}}" class="content-image-list">
           <view class="content-image-item" wx:for="{{selectedDetail.stem.imageFileIds}}" wx:key="*this">
             <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-questionid="{{selectedDetail.questionId}}"></image>
           </view>
         </view>
+        <view wx:if="{{selectedDetail.stem.text}}" class="stem-text-card">{{selectedDetail.stem.text}}</view>
         <view class="section-title">选项</view>
         <view wx:if="{{selectedDetail.optionMode === 'per_option'}}" class="option-list">
           <view class="option-card" wx:for="{{selectedDetail.options.items}}" wx:key="key" wx:for-item="option">
@@ -180,12 +180,12 @@
       <view wx:if="{{selectedDetailType === 'grouped'}}">
         <view class="detail-question-id">题组 ID：{{selectedDetail.groupId}}</view>
         <view class="section-title">公共题干</view>
-        <view wx:if="{{selectedDetail.sharedStem.sourceType === 'text'}}" class="stem-text-card">{{selectedDetail.sharedStem.text}}</view>
-        <view wx:if="{{selectedDetail.sharedStem.sourceType === 'image'}}" class="content-image-list">
+        <view wx:if="{{selectedDetail.sharedStem.imageFileIds.length}}" class="content-image-list">
           <view class="content-image-item" wx:for="{{selectedDetail.sharedStem.imageFileIds}}" wx:key="*this">
             <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-groupid="{{selectedDetail.groupId}}"></image>
           </view>
         </view>
+        <view wx:if="{{selectedDetail.sharedStem.text}}" class="stem-text-card">{{selectedDetail.sharedStem.text}}</view>
 
         <view class="section-title">子题切换</view>
         <scroll-view class="detail-child-tabs" scroll-x>
@@ -198,12 +198,12 @@
           <view class="detail-question-id detail-question-id-inner">题号：{{selectedDetailActiveChild.questionLabel}}</view>
           <view class="detail-question-id detail-question-id-inner">题目 ID：{{selectedDetailActiveChild.questionId}}</view>
           <view class="section-title">题干</view>
-          <view wx:if="{{selectedDetailActiveChild.stem.sourceType === 'text'}}" class="stem-text-card">{{selectedDetailActiveChild.stem.text}}</view>
-          <view wx:if="{{selectedDetailActiveChild.stem.sourceType === 'image'}}" class="content-image-list">
+          <view wx:if="{{selectedDetailActiveChild.stem.imageFileIds.length}}" class="content-image-list">
             <view class="content-image-item" wx:for="{{selectedDetailActiveChild.stem.imageFileIds}}" wx:key="*this">
               <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-questionid="{{selectedDetailActiveChild.questionId}}" data-groupid="{{selectedDetail.groupId}}"></image>
             </view>
           </view>
+          <view wx:if="{{selectedDetailActiveChild.stem.text}}" class="stem-text-card">{{selectedDetailActiveChild.stem.text}}</view>
           <view class="section-title">选项</view>
           <view wx:if="{{selectedDetailActiveChild.optionMode === 'per_option'}}" class="option-list">
             <view class="option-card" wx:for="{{selectedDetailActiveChild.options.items}}" wx:key="key" wx:for-item="option">
@@ -241,18 +241,12 @@
         <input class="text-input" value="{{editorForm.single.questionLabel}}" bindinput="onQuestionLabelInput" placeholder="请输入题号昵称" maxlength="-1" />
 
         <view class="section-title">题干</view>
-        <view class="segmented">
-          <view class="segmented-item {{editorForm.single.stem.sourceType === 'text' ? 'segmented-item-active' : ''}}" bindtap="switchStemSourceType" data-type="text">文本</view>
-          <view class="segmented-item {{editorForm.single.stem.sourceType === 'image' ? 'segmented-item-active' : ''}}" bindtap="switchStemSourceType" data-type="image">图片</view>
-        </view>
-        <textarea wx:if="{{editorForm.single.stem.sourceType === 'text'}}" class="text-area" value="{{editorForm.single.stem.text}}" bindinput="onStemTextInput" placeholder="请输入题干文本" auto-height maxlength="-1"></textarea>
-        <view wx:if="{{editorForm.single.stem.sourceType === 'image'}}">
-          <view class="btn-full secondary-btn" bindtap="uploadStemImages">上传题干图片</view>
-          <view class="content-image-list">
-            <view class="content-image-item" wx:for="{{editorForm.single.stem.imageFileIds}}" wx:key="*this" wx:for-index="imgIndex">
-              <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewSingleImage" data-src="{{item}}"></image>
-              <view class="mini-actions"><button size="mini" type="warn" bindtap="removeStemImage" data-index="{{imgIndex}}">删除</button></view>
-            </view>
+        <textarea class="text-area" value="{{editorForm.single.stem.text}}" bindinput="onStemTextInput" placeholder="请输入题干文本，可与图片同时存在" auto-height maxlength="-1"></textarea>
+        <view class="btn-full secondary-btn" bindtap="uploadStemImages">上传题干图片</view>
+        <view class="content-image-list">
+          <view class="content-image-item" wx:for="{{editorForm.single.stem.imageFileIds}}" wx:key="*this" wx:for-index="imgIndex">
+            <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewSingleImage" data-src="{{item}}"></image>
+            <view class="mini-actions"><button size="mini" type="warn" bindtap="removeStemImage" data-index="{{imgIndex}}">删除</button></view>
           </view>
         </view>
 
@@ -314,18 +308,12 @@
       <view wx:if="{{editorEntryMode === 'grouped'}}">
         <view class="detail-question-id" wx:if="{{editorMode === 'edit'}}">题组 ID：{{editorForm.grouped.groupId}}</view>
         <view class="section-title">公共题干</view>
-        <view class="segmented">
-          <view class="segmented-item {{editorForm.grouped.sharedStem.sourceType === 'text' ? 'segmented-item-active' : ''}}" bindtap="switchStemSourceType" data-scope="group-shared" data-type="text">文本</view>
-          <view class="segmented-item {{editorForm.grouped.sharedStem.sourceType === 'image' ? 'segmented-item-active' : ''}}" bindtap="switchStemSourceType" data-scope="group-shared" data-type="image">图片</view>
-        </view>
-        <textarea wx:if="{{editorForm.grouped.sharedStem.sourceType === 'text'}}" class="text-area" value="{{editorForm.grouped.sharedStem.text}}" bindinput="onStemTextInput" data-scope="group-shared" placeholder="请输入公共题干文本" auto-height maxlength="-1"></textarea>
-        <view wx:if="{{editorForm.grouped.sharedStem.sourceType === 'image'}}">
-          <view class="btn-full secondary-btn" bindtap="uploadStemImages" data-scope="group-shared">上传公共题干图片</view>
-          <view class="content-image-list">
-            <view class="content-image-item" wx:for="{{editorForm.grouped.sharedStem.imageFileIds}}" wx:key="*this" wx:for-index="imgIndex">
-              <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewSingleImage" data-src="{{item}}"></image>
-              <view class="mini-actions"><button size="mini" type="warn" bindtap="removeStemImage" data-scope="group-shared" data-index="{{imgIndex}}">删除</button></view>
-            </view>
+        <textarea class="text-area" value="{{editorForm.grouped.sharedStem.text}}" bindinput="onStemTextInput" data-scope="group-shared" placeholder="请输入公共题干文本，可与图片同时存在" auto-height maxlength="-1"></textarea>
+        <view class="btn-full secondary-btn" bindtap="uploadStemImages" data-scope="group-shared">上传公共题干图片</view>
+        <view class="content-image-list">
+          <view class="content-image-item" wx:for="{{editorForm.grouped.sharedStem.imageFileIds}}" wx:key="*this" wx:for-index="imgIndex">
+            <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewSingleImage" data-src="{{item}}"></image>
+            <view class="mini-actions"><button size="mini" type="warn" bindtap="removeStemImage" data-scope="group-shared" data-index="{{imgIndex}}">删除</button></view>
           </view>
         </view>
 
@@ -344,18 +332,12 @@
           <input class="text-input" value="{{child.questionLabel}}" bindinput="onQuestionLabelInput" data-scope="group-child" data-child-index="{{childIndex}}" placeholder="请输入子题题号昵称" maxlength="-1" />
 
           <view class="section-title">题干</view>
-          <view class="segmented">
-            <view class="segmented-item {{child.stem.sourceType === 'text' ? 'segmented-item-active' : ''}}" bindtap="switchStemSourceType" data-scope="group-child" data-child-index="{{childIndex}}" data-type="text">文本</view>
-            <view class="segmented-item {{child.stem.sourceType === 'image' ? 'segmented-item-active' : ''}}" bindtap="switchStemSourceType" data-scope="group-child" data-child-index="{{childIndex}}" data-type="image">图片</view>
-          </view>
-          <textarea wx:if="{{child.stem.sourceType === 'text'}}" class="text-area" value="{{child.stem.text}}" bindinput="onStemTextInput" data-scope="group-child" data-child-index="{{childIndex}}" placeholder="请输入子题题干文本" auto-height maxlength="-1"></textarea>
-          <view wx:if="{{child.stem.sourceType === 'image'}}">
-            <view class="btn-full secondary-btn" bindtap="uploadStemImages" data-scope="group-child" data-child-index="{{childIndex}}">上传子题图片</view>
-            <view class="content-image-list">
-              <view class="content-image-item" wx:for="{{child.stem.imageFileIds}}" wx:key="*this" wx:for-index="imgIndex">
-                <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewSingleImage" data-src="{{item}}"></image>
-                <view class="mini-actions"><button size="mini" type="warn" bindtap="removeStemImage" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{imgIndex}}">删除</button></view>
-              </view>
+          <textarea class="text-area" value="{{child.stem.text}}" bindinput="onStemTextInput" data-scope="group-child" data-child-index="{{childIndex}}" placeholder="请输入子题题干文本，可与图片同时存在" auto-height maxlength="-1"></textarea>
+          <view class="btn-full secondary-btn" bindtap="uploadStemImages" data-scope="group-child" data-child-index="{{childIndex}}">上传子题图片</view>
+          <view class="content-image-list">
+            <view class="content-image-item" wx:for="{{child.stem.imageFileIds}}" wx:key="*this" wx:for-index="imgIndex">
+              <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewSingleImage" data-src="{{item}}"></image>
+              <view class="mini-actions"><button size="mini" type="warn" bindtap="removeStemImage" data-scope="group-child" data-child-index="{{childIndex}}" data-index="{{imgIndex}}">删除</button></view>
             </view>
           </view>
 

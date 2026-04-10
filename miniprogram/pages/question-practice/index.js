@@ -107,13 +107,13 @@ function formatTime(value) {
 
 function normalizeRichContent(content) {
   const source = isPlainObject(content) ? content : {};
-  const sourceType = source.sourceType === "image" ? "image" : "text";
   const imageFileIds = normalizeArray(source.imageFileIds)
     .map((item) => normalizeString(item))
     .filter(Boolean);
+  const text = normalizeString(source.text);
   return attachRenderedRichContent({
-    sourceType: sourceType === "image" && imageFileIds.length ? "image" : "text",
-    text: sourceType === "text" ? normalizeString(source.text) : "",
+    sourceType: imageFileIds.length ? "image" : "text",
+    text,
     imageFileIds,
   });
 }

@@ -177,9 +177,9 @@
   "entryMode": "single",
   "sharedStem": {},
   "stem": {
-    "sourceType": "text",
+    "sourceType": "image",
     "text": "题干文本",
-    "imageFileIds": []
+    "imageFileIds": ["cloud://a", "cloud://b"]
   },
   "optionMode": "per_option",
   "options": {
@@ -260,12 +260,16 @@
 
 规则：
 
-- 当 `sourceType = "text"` 时
-  - `text` 必填
-  - `imageFileIds` 必须为空数组
-- 当 `sourceType = "image"` 时
-  - `imageFileIds` 必须是非空数组
-  - `text` 必须为空字符串
+- `text` 可为空字符串
+- `imageFileIds` 可为空数组
+- `text` 与 `imageFileIds` 不能同时为空
+- 展示顺序固定为“图片在前，文字在后”
+- `sourceType` 保留用于兼容旧数据和轻量判断
+  - 当 `imageFileIds` 非空时，建议传 `"image"`
+  - 当 `imageFileIds` 为空且仅有文本时，建议传 `"text"`
+- 后端与前端读取时都需要兼容旧结构：
+  - 旧文本题干：`sourceType = "text"` 且只有 `text`
+  - 旧图片题干：`sourceType = "image"` 且只有 `imageFileIds`
 
 补充说明：
 
@@ -514,7 +518,7 @@
   "sharedStem": {},
   "stem": {
     "sourceType": "image",
-    "text": "",
+    "text": "请结合图片回答问题",
     "imageFileIds": ["cloud://a", "cloud://b"]
   },
   "optionMode": "per_option",
@@ -567,9 +571,9 @@
   "entryMode": "single",
   "sharedStem": {},
   "stem": {
-    "sourceType": "text",
+    "sourceType": "image",
     "text": "新的题干",
-    "imageFileIds": []
+    "imageFileIds": ["cloud://new-stem-image"]
   },
   "optionMode": "grouped_asset",
   "options": {
@@ -698,18 +702,18 @@
 {
   "type": "createQuestionGroup",
   "sharedStem": {
-    "sourceType": "text",
+    "sourceType": "image",
     "text": "公共题干",
-    "imageFileIds": []
+    "imageFileIds": ["cloud://shared-a"]
   },
   "children": [
     {
       "questionLabel": "题号B-02",
       "questionType": "choice",
       "stem": {
-        "sourceType": "text",
+        "sourceType": "image",
         "text": "子题1",
-        "imageFileIds": []
+        "imageFileIds": ["cloud://child-a"]
       },
       "optionMode": "per_option",
       "options": {
@@ -765,7 +769,7 @@
   "groupId": "g_xxx",
   "sharedStem": {
     "sourceType": "image",
-    "text": "",
+    "text": "更新后的公共题干说明",
     "imageFileIds": ["cloud://a"]
   },
   "children": [
@@ -773,9 +777,9 @@
       "questionId": "q_1",
       "questionType": "choice",
       "stem": {
-        "sourceType": "text",
+        "sourceType": "image",
         "text": "更新后的子题1",
-        "imageFileIds": []
+        "imageFileIds": ["cloud://child-updated"]
       },
       "optionMode": "grouped_asset",
       "options": {

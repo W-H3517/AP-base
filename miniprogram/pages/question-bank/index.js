@@ -13,6 +13,7 @@ const {
   attachRenderedOptionItem,
   attachRenderedRichContent,
 } = require("../../utils/markdown");
+const { createPagedResourceManager, hasQuestionImages } = require("../../utils/pagedAssets");
 
 function getCloudEnv() {
   const app = getApp();
@@ -767,11 +768,23 @@ Page({
 
   onLoad(options) {
     this.detailCacheMap = new Map();
+    this.pagedResourceManager = createPagedResourceManager({
+      concurrency: 2,
+      onAssetUpdate: () => {
+        this.refreshDetailAssetState();
+      },
+    });
     this.setData({
       type: options.type || "questions",
       mode: options.mode || "browse",
     });
     this.refreshCurrentUser();
+  },
+
+  onUnload() {
+    if (this.pagedResourceManager) {
+      this.pagedResourceManager.reset();
+    }
   },
 
   onShow() {
@@ -1127,8 +1140,14 @@ Page({
     });
 
     try {
-      const result = await this.callQuestionFunction("getCurrentUser");
-      const currentUser = normalizeUser(result);
+      const app = getApp();
+      let currentUser;
+      if (app && typeof app.fetchCurrentUser === "function") {
+        currentUser = normalizeUser(await app.fetchCurrentUser());
+      } else {
+        const result = await this.callQuestionFunction("getCurrentUser");
+        currentUser = normalizeUser(result);
+      }
       const isAdmin = currentUser.role === "admin";
       this.setData({
         currentUser,
@@ -1387,15 +1406,22 @@ Page({
   },
 
   showSingleDetail(detail, options = {}) {
-    const normalized = applyRenderModeToQuestion(
-      normalizeQuestionItem(detail, this.data.isAdmin),
+    const normalized = normalizeQuestionItem(detail, this.data.isAdmin);
+    if (this.pagedResourceManager) {
+      this.pagedResourceManager.reset();
+      this.pagedResourceManager.primePageItems([normalized]);
+    }
+    const rendered = applyRenderModeToQuestion(
+      this.pagedResourceManager
+        ? this.pagedResourceManager.resolveQuestionAssets(normalized)
+        : normalized,
       false
     );
     this.setData({
-      selectedDetail: normalized,
+      selectedDetail: rendered,
       selectedDetailType: "single",
       selectedDetailSource: options.source || "network",
-      selectedDetailQuestionId: normalized.questionId,
+      selectedDetailQuestionId: rendered.questionId,
       selectedDetailGroupId: "",
       selectedDetailActiveChildQuestionId: "",
       selectedDetailActiveChild: null,
@@ -1403,6 +1429,7 @@ Page({
       detailShowRawText: false,
       showDetailModal: true,
     });
+    this.prefetchDetailImages();
   },
 
   showGroupedChildDetail(groupDetail, activeChildQuestionId, options = {}) {
@@ -1412,24 +1439,43 @@ Page({
       normalizeArray(normalized.children).find(
         (child) => child.questionId === normalizeString(activeChildQuestionId)
       ) || normalizeArray(normalized.children)[0] || null;
-    this.setData({
-      selectedDetail: assignObject({}, normalized, {
-        sharedStem: assignObject({}, normalized.sharedStem, {
+    if (this.pagedResourceManager) {
+      this.pagedResourceManager.reset();
+      this.pagedResourceManager.primePageItems(normalized.children);
+    }
+    const selectedDetail = assignObject({}, normalized, {
+      sharedStem: assignObject(
+        {},
+        this.pagedResourceManager
+          ? this.pagedResourceManager.resolveQuestionAssets({ sharedStem: normalized.sharedStem }).sharedStem
+          : normalized.sharedStem,
+        {
           renderAsPlainText: detailShowRawText,
-        }),
-      }),
+        }
+      ),
+    });
+    this.setData({
+      selectedDetail,
       selectedDetailType: "grouped",
       selectedDetailSource: options.source || "network",
       selectedDetailQuestionId: activeChild ? activeChild.questionId : "",
-      selectedDetailGroupId: normalized.groupId,
+      selectedDetailGroupId: selectedDetail.groupId,
       selectedDetailActiveChildQuestionId: activeChild ? activeChild.questionId : "",
       selectedDetailActiveChild: activeChild
-        ? applyRenderModeToQuestion(activeChild, detailShowRawText)
+        ? applyRenderModeToQuestion(
+            this.pagedResourceManager
+              ? this.pagedResourceManager.resolveQuestionAssets(
+                  assignObject({}, activeChild, { sharedStem: normalized.sharedStem })
+                )
+              : activeChild,
+            detailShowRawText
+          )
         : null,
-      detailChildTabs: buildDetailChildTabs(normalized.children, activeChild ? activeChild.questionId : ""),
+      detailChildTabs: buildDetailChildTabs(selectedDetail.children, activeChild ? activeChild.questionId : ""),
       detailShowRawText,
       showDetailModal: true,
     });
+    this.prefetchDetailImages();
   },
 
   async viewQuestionDetail(e) {
@@ -1487,6 +1533,9 @@ Page({
   },
 
   closeDetailModal() {
+    if (this.pagedResourceManager) {
+      this.pagedResourceManager.reset();
+    }
     this.setData({
       showDetailModal: false,
       selectedDetail: null,
@@ -1516,12 +1565,22 @@ Page({
     this.setData({
       selectedDetailQuestionId: activeChild.questionId,
       selectedDetailActiveChildQuestionId: activeChild.questionId,
-      selectedDetailActiveChild: applyRenderModeToQuestion(activeChild, detailShowRawText),
+      selectedDetailActiveChild: applyRenderModeToQuestion(
+        this.pagedResourceManager
+          ? this.pagedResourceManager.resolveQuestionAssets(
+              assignObject({}, activeChild, {
+                sharedStem: this.data.selectedDetail && this.data.selectedDetail.sharedStem,
+              })
+            )
+          : activeChild,
+        detailShowRawText
+      ),
       detailChildTabs: buildDetailChildTabs(
         this.data.selectedDetail && this.data.selectedDetail.children,
         activeChild.questionId
       ),
     });
+    this.prefetchDetailImages();
   },
 
   toggleDetailTextRenderMode() {
@@ -1548,6 +1607,81 @@ Page({
         nextShowRawText
       ),
     });
+  },
+
+  refreshDetailAssetState() {
+    if (!this.data.showDetailModal || !this.pagedResourceManager) {
+      return;
+    }
+
+    if (this.data.selectedDetailType === "single" && this.data.selectedDetail) {
+      const nextDetail = applyRenderModeToQuestion(
+        this.pagedResourceManager.resolveQuestionAssets(this.data.selectedDetail),
+        !!this.data.detailShowRawText
+      );
+      this.setData({
+        selectedDetail: nextDetail,
+      });
+      return;
+    }
+
+    if (this.data.selectedDetailType === "grouped" && this.data.selectedDetail) {
+      const activeChild = normalizeArray(this.data.selectedDetail.children).find(
+        (child) => child.questionId === this.data.selectedDetailActiveChildQuestionId
+      ) || null;
+      this.setData({
+        "selectedDetail.sharedStem": assignObject(
+          {},
+          this.pagedResourceManager.resolveQuestionAssets({
+            sharedStem: this.data.selectedDetail.sharedStem,
+          }).sharedStem,
+          {
+            renderAsPlainText: !!this.data.detailShowRawText,
+          }
+        ),
+        selectedDetailActiveChild: activeChild
+          ? applyRenderModeToQuestion(
+              this.pagedResourceManager.resolveQuestionAssets(
+                assignObject({}, activeChild, {
+                  sharedStem: this.data.selectedDetail.sharedStem,
+                })
+              ),
+              !!this.data.detailShowRawText
+            )
+          : null,
+      });
+    }
+  },
+
+  prefetchDetailImages() {
+    if (!this.pagedResourceManager || !this.data.showDetailModal) {
+      return;
+    }
+
+    if (this.data.selectedDetailType === "single") {
+      this.pagedResourceManager.prefetchImagesForItems(this.data.selectedDetail, null);
+      return;
+    }
+
+    const children = normalizeArray(this.data.selectedDetail && this.data.selectedDetail.children);
+    const activeIndex = children.findIndex(
+      (child) => child.questionId === this.data.selectedDetailActiveChildQuestionId
+    );
+    const currentChild = activeIndex === -1 ? null : children[activeIndex];
+    let nextChild = null;
+    if (activeIndex !== -1) {
+      for (let i = activeIndex + 1; i < children.length; i += 1) {
+        if (hasQuestionImages(children[i])) {
+          nextChild = children[i];
+          break;
+        }
+      }
+    }
+    const sharedStem = this.data.selectedDetail && this.data.selectedDetail.sharedStem;
+    this.pagedResourceManager.prefetchImagesForItems(
+      currentChild ? assignObject({}, currentChild, { sharedStem }) : sharedStem ? { sharedStem } : null,
+      nextChild ? assignObject({}, nextChild, { sharedStem }) : null
+    );
   },
 
   previewSingleImage(e) {
@@ -1600,7 +1734,10 @@ Page({
       }
     }
 
-    const urls = getQuestionImageUrls(source);
+    const urls =
+      source && this.pagedResourceManager
+        ? this.pagedResourceManager.resolvePreviewUrls(source)
+        : getQuestionImageUrls(source);
     wx.previewImage({
       current,
       urls: urls.length ? urls : [current],

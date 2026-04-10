@@ -476,6 +476,22 @@ page {
   background: #f8fafc;
 }
 
+.placeholder-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  font-size: 24rpx;
+  line-height: 1.6;
+  border: 1rpx dashed rgba(148, 163, 184, 0.55);
+  box-sizing: border-box;
+}
+
+.option-image-placeholder,
+.grouped-image-placeholder {
+  min-height: 220rpx;
+}
+
 .answer-hint,
 .answer-summary {
   padding: 20rpx 24rpx;

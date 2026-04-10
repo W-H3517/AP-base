@@ -49,6 +49,14 @@ function getRuntimeContext() {
   };
 }
 
+async function fetchCurrentUserWithCache() {
+  const app = getApp();
+  if (app && typeof app.fetchCurrentUser === "function") {
+    return app.fetchCurrentUser();
+  }
+  return null;
+}
+
 function normalizeArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -129,15 +137,21 @@ Page({
 
   async loadCurrentUser() {
     try {
-      const resp = await wx.cloud.callFunction({
-        name: USER_CLOUD_FUNCTION_NAME,
-        data: {
-          type: "getCurrentUser",
-          ...getRuntimeContext(),
-        },
+      const user = await fetchCurrentUserWithCache().then((cachedUser) => {
+        if (cachedUser) {
+          return cachedUser;
+        }
+        return wx.cloud.callFunction({
+          name: USER_CLOUD_FUNCTION_NAME,
+          data: {
+            type: "getCurrentUser",
+            ...getRuntimeContext(),
+          },
+        }).then((resp) => {
+          const result = unwrapCloudResult(resp);
+          return isPlainObject(result.data) ? result.data : {};
+        });
       });
-      const result = unwrapCloudResult(resp);
-      const user = isPlainObject(result.data) ? result.data : {};
       this.setData({
         isAdmin: (user.role || "user") === "admin",
       });

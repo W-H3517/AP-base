@@ -1629,6 +1629,9 @@ const getPracticePaper = async (event) => {
   const resp = await db.collection(collections.questions).get();
   const configuredCount = normalizePracticePaperQuestionCount(PRACTICE_PAPER_QUESTION_COUNT);
   const questions = buildPracticePaperQuestions(resp.data || [], configuredCount);
+  const questionDetails = questions.map((question) =>
+    buildPracticeQuestionItem(question),
+  );
   return ok({
     paperMeta: {
       configuredCount,
@@ -1636,6 +1639,7 @@ const getPracticePaper = async (event) => {
       generatedAt: Date.now(),
     },
     questionRefs: buildPracticeQuestionRefs(questions),
+    questionDetails,
   });
 };
 
@@ -1917,6 +1921,7 @@ const getPracticeSubmissionDetail = async (event) => {
       submittedAt: Number(record.createTime || 0),
     },
     paperSnapshot: cloneJson(record.paperSnapshot || { totalCount: 0, questions: [] }),
+    questionSnapshots: cloneJson(record.questionSnapshots || []),
     answers: cloneJson(record.answers || []),
     judgeResult: {
       totalCount: Number(judgeResult.totalCount || 0),

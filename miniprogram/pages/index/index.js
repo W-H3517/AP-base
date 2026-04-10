@@ -132,19 +132,24 @@ Page({
     });
 
     try {
-      const resp = await wx.cloud.callFunction({
-        name: USER_CLOUD_FUNCTION_NAME,
-        data: {
-          type: "getCurrentUser",
-          ...getRuntimeContext(),
-        },
-      });
-
-      const payload = unwrapCloudResult(resp) || {};
-      const user =
-        payload && payload.data && typeof payload.data === "object" && !Array.isArray(payload.data)
-          ? payload.data
-          : payload;
+      const app = getApp();
+      let user;
+      if (app && typeof app.fetchCurrentUser === "function") {
+        user = await app.fetchCurrentUser();
+      } else {
+        const resp = await wx.cloud.callFunction({
+          name: USER_CLOUD_FUNCTION_NAME,
+          data: {
+            type: "getCurrentUser",
+            ...getRuntimeContext(),
+          },
+        });
+        const payload = unwrapCloudResult(resp) || {};
+        user =
+          payload && payload.data && typeof payload.data === "object" && !Array.isArray(payload.data)
+            ? payload.data
+            : payload;
+      }
       const currentUser = {
         openid: user.openid || "",
         role: user.role || "user",

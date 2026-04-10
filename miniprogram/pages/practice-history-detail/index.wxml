@@ -75,7 +75,7 @@
       </view>
 
       <view class="section-title" wx:if="{{currentQuestion.sharedStemVisible}}">公共题干</view>
-      <view class="image-list" wx:if="{{currentQuestion.sharedStemVisible && currentQuestion.sharedStem.imageFileIds.length}}">
+      <view class="image-list" wx:if="{{currentQuestion.sharedStemVisible && currentQuestion.sharedStem.imageAssets.length}}">
         <view class="stem-image-toolbar">
           <view class="stem-scroll-hint">左右拖动查看完整题干</view>
           <view class="stem-zoom-actions">
@@ -85,8 +85,9 @@
             <view class="stem-zoom-reset" bindtap="resetStemImageScale">重置</view>
           </view>
         </view>
-        <scroll-view wx:for="{{currentQuestion.sharedStem.imageFileIds}}" wx:key="*this" class="stem-image-scroll" scroll-x enhanced show-scrollbar="true">
-          <image class="stem-content-image" style="height: {{stemImageHeightRpx}}rpx;" mode="heightFix" src="{{item}}" bindtap="previewImage" data-src="{{item}}"></image>
+        <scroll-view wx:for="{{currentQuestion.sharedStem.imageAssets}}" wx:key="fileId" class="stem-image-scroll" scroll-x enhanced show-scrollbar="true">
+          <image wx:if="{{item.src}}" class="stem-content-image" style="height: {{stemImageHeightRpx}}rpx;" mode="heightFix" src="{{item.src}}" bindtap="previewImage" data-src="{{item.src}}"></image>
+          <view wx:else class="stem-content-image placeholder-image" style="height: {{stemImageHeightRpx}}rpx;">图片加载中...</view>
         </scroll-view>
       </view>
       <view class="stem-card" wx:if="{{currentQuestion.sharedStemVisible && currentQuestion.sharedStem.text}}">
@@ -105,7 +106,7 @@
       </view>
 
       <view class="section-title">题目</view>
-      <view class="image-list" wx:if="{{currentQuestion.stem.imageFileIds.length}}">
+      <view class="image-list" wx:if="{{currentQuestion.stem.imageAssets.length}}">
         <view class="stem-image-toolbar">
           <view class="stem-scroll-hint">左右拖动查看完整题干</view>
           <view class="stem-zoom-actions">
@@ -115,8 +116,9 @@
             <view class="stem-zoom-reset" bindtap="resetStemImageScale">重置</view>
           </view>
         </view>
-        <scroll-view wx:for="{{currentQuestion.stem.imageFileIds}}" wx:key="*this" class="stem-image-scroll" scroll-x enhanced show-scrollbar="true">
-          <image class="stem-content-image" style="height: {{stemImageHeightRpx}}rpx;" mode="heightFix" src="{{item}}" bindtap="previewImage" data-src="{{item}}"></image>
+        <scroll-view wx:for="{{currentQuestion.stem.imageAssets}}" wx:key="fileId" class="stem-image-scroll" scroll-x enhanced show-scrollbar="true">
+          <image wx:if="{{item.src}}" class="stem-content-image" style="height: {{stemImageHeightRpx}}rpx;" mode="heightFix" src="{{item.src}}" bindtap="previewImage" data-src="{{item.src}}"></image>
+          <view wx:else class="stem-content-image placeholder-image" style="height: {{stemImageHeightRpx}}rpx;">图片加载中...</view>
         </scroll-view>
       </view>
       <view class="stem-card" wx:if="{{currentQuestion.stem.text}}">
@@ -161,12 +163,14 @@
             />
             <view wx:else>{{item.text}}</view>
           </view>
-          <image wx:if="{{item.sourceType === 'image' && item.imageFileId}}" class="option-image" mode="widthFix" src="{{item.imageFileId}}" bindtap="previewImage" data-src="{{item.imageFileId}}"></image>
+          <image wx:if="{{item.sourceType === 'image' && item.imageAsset.src}}" class="option-image" mode="widthFix" src="{{item.imageAsset.src}}" bindtap="previewImage" data-src="{{item.imageAsset.src}}"></image>
+          <view wx:elif="{{item.sourceType === 'image' && item.imageFileId}}" class="option-image placeholder-image option-image-placeholder">图片加载中...</view>
         </view>
       </view>
 
       <view wx:if="{{currentQuestion.optionMode === 'grouped_asset'}}">
-        <image wx:if="{{currentQuestion.options.groupedAsset.imageFileId}}" class="grouped-image" mode="widthFix" src="{{currentQuestion.options.groupedAsset.imageFileId}}" bindtap="previewImage" data-src="{{currentQuestion.options.groupedAsset.imageFileId}}"></image>
+        <image wx:if="{{currentQuestion.options.groupedAsset.imageAsset.src}}" class="grouped-image" mode="widthFix" src="{{currentQuestion.options.groupedAsset.imageAsset.src}}" bindtap="previewImage" data-src="{{currentQuestion.options.groupedAsset.imageAsset.src}}"></image>
+        <view wx:elif="{{currentQuestion.options.groupedAsset.imageFileId}}" class="grouped-image placeholder-image grouped-image-placeholder">图片加载中...</view>
         <view class="chip-list">
           <view class="chip {{item.selected ? 'chip-selected' : ''}}" wx:for="{{currentQuestion.optionKeysForDisplay}}" wx:key="key">
             {{item.selected ? item.key + ' · 我的答案' : item.key}}

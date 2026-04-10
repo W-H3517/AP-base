@@ -157,9 +157,10 @@
         <view class="detail-question-id">题号：{{selectedDetail.questionLabel}}</view>
         <view class="detail-question-id">题目 ID：{{selectedDetail.questionId}}</view>
         <view class="section-title">题干</view>
-        <view wx:if="{{selectedDetail.stem.imageFileIds.length}}" class="content-image-list">
-          <view class="content-image-item" wx:for="{{selectedDetail.stem.imageFileIds}}" wx:key="*this">
-            <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-questionid="{{selectedDetail.questionId}}"></image>
+        <view wx:if="{{selectedDetail.stem.imageAssets.length}}" class="content-image-list">
+          <view class="content-image-item" wx:for="{{selectedDetail.stem.imageAssets}}" wx:key="fileId">
+            <image wx:if="{{item.src}}" class="preview-image clickable-image" mode="widthFix" src="{{item.src}}" bindtap="previewQuestionImages" data-src="{{item.src}}" data-questionid="{{selectedDetail.questionId}}"></image>
+            <view wx:else class="preview-image image-placeholder">图片加载中...</view>
           </view>
         </view>
         <view wx:if="{{selectedDetail.stem.text}}" class="stem-text-card">
@@ -195,11 +196,13 @@
               />
               <view wx:else>{{option.text}}</view>
             </view>
-            <image wx:if="{{option.sourceType === 'image' && option.imageFileId}}" class="option-image clickable-image" mode="widthFix" src="{{option.imageFileId}}" bindtap="previewQuestionImages" data-src="{{option.imageFileId}}" data-questionid="{{selectedDetail.questionId}}"></image>
+            <image wx:if="{{option.sourceType === 'image' && option.imageAsset.src}}" class="option-image clickable-image" mode="widthFix" src="{{option.imageAsset.src}}" bindtap="previewQuestionImages" data-src="{{option.imageAsset.src}}" data-questionid="{{selectedDetail.questionId}}"></image>
+            <view wx:elif="{{option.sourceType === 'image' && option.imageFileId}}" class="option-image image-placeholder">图片加载中...</view>
           </view>
         </view>
         <view wx:if="{{selectedDetail.optionMode === 'grouped_asset'}}">
-          <image wx:if="{{selectedDetail.options.groupedAsset.imageFileId}}" class="preview-image clickable-image" mode="widthFix" src="{{selectedDetail.options.groupedAsset.imageFileId}}" bindtap="previewQuestionImages" data-src="{{selectedDetail.options.groupedAsset.imageFileId}}" data-questionid="{{selectedDetail.questionId}}"></image>
+          <image wx:if="{{selectedDetail.options.groupedAsset.imageAsset.src}}" class="preview-image clickable-image" mode="widthFix" src="{{selectedDetail.options.groupedAsset.imageAsset.src}}" bindtap="previewQuestionImages" data-src="{{selectedDetail.options.groupedAsset.imageAsset.src}}" data-questionid="{{selectedDetail.questionId}}"></image>
+          <view wx:elif="{{selectedDetail.options.groupedAsset.imageFileId}}" class="preview-image image-placeholder">图片加载中...</view>
           <view class="chip-list">
             <view class="chip" wx:for="{{selectedDetail.options.keys}}" wx:key="*this">{{item}}</view>
           </view>
@@ -210,9 +213,10 @@
       <view wx:if="{{selectedDetailType === 'grouped'}}">
         <view class="detail-question-id">题组 ID：{{selectedDetail.groupId}}</view>
         <view class="section-title">公共题干</view>
-        <view wx:if="{{selectedDetail.sharedStem.imageFileIds.length}}" class="content-image-list">
-          <view class="content-image-item" wx:for="{{selectedDetail.sharedStem.imageFileIds}}" wx:key="*this">
-            <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-groupid="{{selectedDetail.groupId}}"></image>
+        <view wx:if="{{selectedDetail.sharedStem.imageAssets.length}}" class="content-image-list">
+          <view class="content-image-item" wx:for="{{selectedDetail.sharedStem.imageAssets}}" wx:key="fileId">
+            <image wx:if="{{item.src}}" class="preview-image clickable-image" mode="widthFix" src="{{item.src}}" bindtap="previewQuestionImages" data-src="{{item.src}}" data-groupid="{{selectedDetail.groupId}}"></image>
+            <view wx:else class="preview-image image-placeholder">图片加载中...</view>
           </view>
         </view>
         <view wx:if="{{selectedDetail.sharedStem.text}}" class="stem-text-card">
@@ -241,9 +245,10 @@
           <view class="detail-question-id detail-question-id-inner">题号：{{selectedDetailActiveChild.questionLabel}}</view>
           <view class="detail-question-id detail-question-id-inner">题目 ID：{{selectedDetailActiveChild.questionId}}</view>
           <view class="section-title">题干</view>
-          <view wx:if="{{selectedDetailActiveChild.stem.imageFileIds.length}}" class="content-image-list">
-            <view class="content-image-item" wx:for="{{selectedDetailActiveChild.stem.imageFileIds}}" wx:key="*this">
-              <image class="preview-image clickable-image" mode="widthFix" src="{{item}}" bindtap="previewQuestionImages" data-src="{{item}}" data-questionid="{{selectedDetailActiveChild.questionId}}" data-groupid="{{selectedDetail.groupId}}"></image>
+          <view wx:if="{{selectedDetailActiveChild.stem.imageAssets.length}}" class="content-image-list">
+            <view class="content-image-item" wx:for="{{selectedDetailActiveChild.stem.imageAssets}}" wx:key="fileId">
+              <image wx:if="{{item.src}}" class="preview-image clickable-image" mode="widthFix" src="{{item.src}}" bindtap="previewQuestionImages" data-src="{{item.src}}" data-questionid="{{selectedDetailActiveChild.questionId}}" data-groupid="{{selectedDetail.groupId}}"></image>
+              <view wx:else class="preview-image image-placeholder">图片加载中...</view>
             </view>
           </view>
           <view wx:if="{{selectedDetailActiveChild.stem.text}}" class="stem-text-card">
@@ -279,11 +284,13 @@
                 />
                 <view wx:else>{{option.text}}</view>
               </view>
-              <image wx:if="{{option.sourceType === 'image' && option.imageFileId}}" class="option-image clickable-image" mode="widthFix" src="{{option.imageFileId}}" bindtap="previewQuestionImages" data-src="{{option.imageFileId}}" data-questionid="{{selectedDetailActiveChild.questionId}}" data-groupid="{{selectedDetail.groupId}}"></image>
+              <image wx:if="{{option.sourceType === 'image' && option.imageAsset.src}}" class="option-image clickable-image" mode="widthFix" src="{{option.imageAsset.src}}" bindtap="previewQuestionImages" data-src="{{option.imageAsset.src}}" data-questionid="{{selectedDetailActiveChild.questionId}}" data-groupid="{{selectedDetail.groupId}}"></image>
+              <view wx:elif="{{option.sourceType === 'image' && option.imageFileId}}" class="option-image image-placeholder">图片加载中...</view>
             </view>
           </view>
           <view wx:if="{{selectedDetailActiveChild.optionMode === 'grouped_asset'}}">
-            <image wx:if="{{selectedDetailActiveChild.options.groupedAsset.imageFileId}}" class="preview-image clickable-image" mode="widthFix" src="{{selectedDetailActiveChild.options.groupedAsset.imageFileId}}" bindtap="previewQuestionImages" data-src="{{selectedDetailActiveChild.options.groupedAsset.imageFileId}}" data-questionid="{{selectedDetailActiveChild.questionId}}" data-groupid="{{selectedDetail.groupId}}"></image>
+            <image wx:if="{{selectedDetailActiveChild.options.groupedAsset.imageAsset.src}}" class="preview-image clickable-image" mode="widthFix" src="{{selectedDetailActiveChild.options.groupedAsset.imageAsset.src}}" bindtap="previewQuestionImages" data-src="{{selectedDetailActiveChild.options.groupedAsset.imageAsset.src}}" data-questionid="{{selectedDetailActiveChild.questionId}}" data-groupid="{{selectedDetail.groupId}}"></image>
+            <view wx:elif="{{selectedDetailActiveChild.options.groupedAsset.imageFileId}}" class="preview-image image-placeholder">图片加载中...</view>
             <view class="chip-list">
               <view class="chip" wx:for="{{selectedDetailActiveChild.options.keys}}" wx:key="*this">{{item}}</view>
             </view>

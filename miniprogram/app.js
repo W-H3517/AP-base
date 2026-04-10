@@ -4,6 +4,17 @@ const STORAGE_ROOTS = {
   trial: "trial",
   release: "trial",
 };
+const CURRENT_USER_CACHE_TTL_MS = 5 * 60 * 1000;
+
+function normalizeCurrentUser(user) {
+  const source = user && typeof user === "object" ? user : {};
+  return {
+    openid: source.openid || "",
+    role: source.role || "user",
+    createTime: source.createTime || "",
+    updateTime: source.updateTime || "",
+  };
+}
 
 function normalizeRuntimeEnvVersion(value) {
   const normalized = typeof value === "string" ? value.trim() : "";
@@ -49,6 +60,7 @@ App({
       runtimeEnvVersion,
       runtimeDataVersion,
       storageRoot: STORAGE_ROOTS[runtimeEnvVersion] || "trial",
+      currentUserCache: null,
     };
     if (!wx.cloud) {
       console.error("请使用 2.2.3 或以上的基础库以使用云能力");
@@ -70,5 +82,75 @@ App({
 
   getStorageRoot() {
     return normalizeRuntimeDataVersion(this.globalData && this.globalData.storageRoot);
+  },
+
+  getRuntimeContext() {
+    return {
+      runtimeEnvVersion: this.getRuntimeEnvVersion(),
+      runtimeDataVersion: this.getRuntimeDataVersion(),
+      storageRoot: this.getStorageRoot(),
+    };
+  },
+
+  getCachedCurrentUser(maxAgeMs = CURRENT_USER_CACHE_TTL_MS) {
+    const cache = this.globalData && this.globalData.currentUserCache;
+    if (!cache || !cache.user || !cache.cachedAt) {
+      return null;
+    }
+    if (Date.now() - Number(cache.cachedAt) > maxAgeMs) {
+      return null;
+    }
+    return normalizeCurrentUser(cache.user);
+  },
+
+  setCachedCurrentUser(user) {
+    const normalizedUser = normalizeCurrentUser(user);
+    if (this.globalData) {
+      this.globalData.currentUserCache = {
+        user: normalizedUser,
+        cachedAt: Date.now(),
+      };
+    }
+    return normalizedUser;
+  },
+
+  async fetchCurrentUser(options = {}) {
+    const forceRefresh = !!(options && options.forceRefresh);
+    const maxAgeMs = Number(options && options.maxAgeMs) || CURRENT_USER_CACHE_TTL_MS;
+    if (!forceRefresh) {
+      const cachedUser = this.getCachedCurrentUser(maxAgeMs);
+      if (cachedUser) {
+        return cachedUser;
+      }
+    }
+
+    if (!forceRefresh && this.currentUserPromise) {
+      return this.currentUserPromise;
+    }
+
+    const request = wx.cloud.callFunction({
+      name: "userService",
+      data: {
+        type: "getCurrentUser",
+        ...this.getRuntimeContext(),
+      },
+    }).then((resp) => {
+      const result = resp && resp.result ? resp.result : {};
+      if (result && result.success === false) {
+        throw new Error(result.errMsg || "云函数调用失败");
+      }
+      const data =
+        result && result.data && typeof result.data === "object" && !Array.isArray(result.data)
+          ? result.data
+          : result;
+      return this.setCachedCurrentUser(data);
+    }).finally(() => {
+      if (this.currentUserPromise === request) {
+        this.currentUserPromise = null;
+      }
+    });
+
+    this.currentUserPromise = request;
+    return request;
   },
 });

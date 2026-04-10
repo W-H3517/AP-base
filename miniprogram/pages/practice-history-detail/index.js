@@ -13,6 +13,7 @@ const {
   attachRenderedOptionItem,
   attachRenderedRichContent,
 } = require("../../utils/markdown");
+const { createPagedResourceManager, hasQuestionImages } = require("../../utils/pagedAssets");
 
 function getNavigationMetrics() {
   const systemInfo =
@@ -60,6 +61,14 @@ function getRuntimeContext() {
         ? app.getStorageRoot()
         : normalizeStorageRoot(app && app.globalData ? app.globalData.storageRoot : ""),
   };
+}
+
+async function fetchCurrentUserWithCache() {
+  const app = getApp();
+  if (app && typeof app.fetchCurrentUser === "function") {
+    return app.fetchCurrentUser();
+  }
+  return null;
 }
 
 function normalizeString(value) {
@@ -216,8 +225,20 @@ Page({
     this.submissionId = normalizeString(options && options.submissionId);
     this.questionCacheMap = new Map();
     this.questionRequestMap = new Map();
+    this.pagedResourceManager = createPagedResourceManager({
+      concurrency: 2,
+      onAssetUpdate: () => {
+        this.refreshCurrentQuestionAssets();
+      },
+    });
     this.loadCurrentUser();
     this.loadSubmissionDetail();
+  },
+
+  onUnload() {
+    if (this.pagedResourceManager) {
+      this.pagedResourceManager.reset();
+    }
   },
 
   showCloudTip(title, content) {
@@ -236,15 +257,21 @@ Page({
 
   async loadCurrentUser() {
     try {
-      const resp = await wx.cloud.callFunction({
-        name: USER_CLOUD_FUNCTION_NAME,
-        data: {
-          type: "getCurrentUser",
-          ...getRuntimeContext(),
-        },
+      const user = await fetchCurrentUserWithCache().then((cachedUser) => {
+        if (cachedUser) {
+          return cachedUser;
+        }
+        return wx.cloud.callFunction({
+          name: USER_CLOUD_FUNCTION_NAME,
+          data: {
+            type: "getCurrentUser",
+            ...getRuntimeContext(),
+          },
+        }).then((resp) => {
+          const result = unwrapCloudResult(resp);
+          return isPlainObject(result.data) ? result.data : {};
+        });
       });
-      const result = unwrapCloudResult(resp);
-      const user = isPlainObject(result.data) ? result.data : {};
       this.setData({
         isAdmin: (user.role || "user") === "admin",
       });
@@ -297,8 +324,20 @@ Page({
         data.judgeResult && data.judgeResult.questionResults
       );
       const summarySource = isPlainObject(data.summary) ? data.summary : {};
+      const questionSnapshots = normalizeArray(data.questionSnapshots).map((item) =>
+        normalizeQuestion(item)
+      );
       this.questionCacheMap = new Map();
       this.questionRequestMap = new Map();
+      if (this.pagedResourceManager) {
+        this.pagedResourceManager.reset();
+        this.pagedResourceManager.primePageItems(questionSnapshots);
+      }
+      questionSnapshots.forEach((question) => {
+        if (question.questionId) {
+          this.questionCacheMap.set(question.questionId, question);
+        }
+      });
       this.setData({
         loading: false,
         loadingQuestion: false,
@@ -332,24 +371,29 @@ Page({
   },
 
   buildRenderedQuestion(question) {
+    const questionWithAssets =
+      this.pagedResourceManager && typeof this.pagedResourceManager.resolveQuestionAssets === "function"
+        ? this.pagedResourceManager.resolveQuestionAssets(question)
+        : question;
     const selectedOptionKeys = normalizeSelectedOptionKeys(
-      this.data.answerMap[question.questionId] || []
+      this.data.answerMap[questionWithAssets.questionId] || []
     );
-    const reviewResult = this.data.reviewQuestionResultsMap[question.questionId] || null;
+    const reviewResult = this.data.reviewQuestionResultsMap[questionWithAssets.questionId] || null;
     return {
-      ...question,
-      sharedStemVisible: question.entryMode === "grouped" && hasRichContent(question.sharedStem),
+      ...questionWithAssets,
+      sharedStemVisible:
+        questionWithAssets.entryMode === "grouped" && hasRichContent(questionWithAssets.sharedStem),
       selectedOptionKeysText: selectedOptionKeys.length ? selectedOptionKeys.join(" / ") : "未作答",
       reviewResult,
       options: {
-        ...question.options,
-        items: normalizeArray(question.options.items).map((item) => ({
+        ...questionWithAssets.options,
+        items: normalizeArray(questionWithAssets.options.items).map((item) => ({
           ...item,
           selected: selectedOptionKeys.includes(item.key),
           selectionLabel: selectedOptionKeys.includes(item.key) ? "我的答案" : "未选择",
         })),
       },
-      optionKeysForDisplay: normalizeArray(question.options.keys).map((key) => ({
+      optionKeysForDisplay: normalizeArray(questionWithAssets.options.keys).map((key) => ({
         key,
         selected: selectedOptionKeys.includes(key),
       })),
@@ -386,6 +430,9 @@ Page({
           throw new Error("题目快照数据不完整");
         }
         this.questionCacheMap.set(ref.questionId, question);
+        if (this.pagedResourceManager) {
+          this.pagedResourceManager.primePageItems([question]);
+        }
         return question;
       })
       .finally(() => {
@@ -397,6 +444,10 @@ Page({
   },
 
   async loadQuestionForDisplay(index) {
+    const ref = this.data.questionRefs[index];
+    if (ref && this.questionCacheMap.has(ref.questionId)) {
+      return this.questionCacheMap.get(ref.questionId);
+    }
     this.setData({
       loadingQuestion: true,
     });
@@ -409,19 +460,17 @@ Page({
     }
   },
 
-  prefetchNeighborQuestions(index) {
-    [index - 1, index + 1].forEach((targetIndex) => {
-      if (targetIndex < 0 || targetIndex >= this.data.questionRefs.length) {
-        return;
-      }
-      this.ensureQuestionLoaded(targetIndex).catch(() => {});
-    });
+  prefetchNextQuestionData(index) {
+    const targetIndex = index + 1;
+    if (targetIndex < 0 || targetIndex >= this.data.questionRefs.length) {
+      return;
+    }
+    this.ensureQuestionLoaded(targetIndex).catch(() => {});
   },
 
   async switchToQuestion(index) {
     try {
       this.setData({
-        currentQuestion: null,
         hasPrevious: index > 0,
         hasNext: index < this.data.questionRefs.length - 1,
       });
@@ -435,10 +484,47 @@ Page({
         hasPrevious: index > 0,
         hasNext: index < this.data.questionRefs.length - 1,
       });
-      this.prefetchNeighborQuestions(index);
+      this.prefetchNextQuestionData(index);
+      this.prefetchQuestionImages(index);
     } catch (error) {
       this.showCloudTip("题目快照加载失败", getErrorMessage(error));
     }
+  },
+
+  refreshCurrentQuestionAssets() {
+    const ref = this.data.questionRefs[this.data.currentQuestionIndex];
+    if (!ref) {
+      return;
+    }
+    const source = this.questionCacheMap.get(ref.questionId);
+    if (!source) {
+      return;
+    }
+    this.setData({
+      currentQuestion: this.buildRenderedQuestion(source),
+    });
+  },
+
+  prefetchQuestionImages(index) {
+    if (!this.pagedResourceManager) {
+      return;
+    }
+    const currentRef = this.data.questionRefs[index];
+    const currentQuestion = currentRef ? this.questionCacheMap.get(currentRef.questionId) : null;
+    let nextQuestion = null;
+
+    for (let i = index + 1; i < this.data.questionRefs.length; i += 1) {
+      const candidateRef = this.data.questionRefs[i];
+      const candidateQuestion = candidateRef
+        ? this.questionCacheMap.get(candidateRef.questionId)
+        : null;
+      if (candidateQuestion && hasQuestionImages(candidateQuestion)) {
+        nextQuestion = candidateQuestion;
+        break;
+      }
+    }
+
+    this.pagedResourceManager.prefetchImagesForItems(currentQuestion, nextQuestion);
   },
 
   goToPreviousQuestion() {
@@ -476,20 +562,11 @@ Page({
     if (!src) {
       return;
     }
-    const urls = [];
     const question = this.data.currentQuestion;
-    if (question) {
-      normalizeRichContent(question.sharedStem).imageFileIds.forEach((item) => urls.push(item));
-      normalizeRichContent(question.stem).imageFileIds.forEach((item) => urls.push(item));
-      normalizeArray(question.options.items).forEach((option) => {
-        if (option.imageFileId) {
-          urls.push(option.imageFileId);
-        }
-      });
-      if (question.options.groupedAsset && question.options.groupedAsset.imageFileId) {
-        urls.push(question.options.groupedAsset.imageFileId);
-      }
-    }
+    const urls =
+      question && this.pagedResourceManager
+        ? this.pagedResourceManager.resolvePreviewUrls(question)
+        : [src];
     wx.previewImage({
       current: src,
       urls: urls.length ? urls : [src],

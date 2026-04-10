@@ -417,6 +417,18 @@ page {
   background: #eef2f7;
 }
 
+.image-placeholder {
+  min-height: 220rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(20, 33, 61, 0.45);
+  font-size: 24rpx;
+  line-height: 1.6;
+  border: 1rpx dashed rgba(148, 163, 184, 0.55);
+  box-sizing: border-box;
+}
+
 .clickable-image:active {
   opacity: 0.82;
 }

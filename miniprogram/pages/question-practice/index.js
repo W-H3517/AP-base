@@ -1,6 +1,6 @@
 const QUESTION_CLOUD_FUNCTION_NAME = "questionService";
 const USER_CLOUD_FUNCTION_NAME = "userService";
-const ASSISTANT_QR_IMAGE = "/images/assistant-qrcode.png";
+const ASSISTANT_QR_IMAGE = "/images/assistant-qrcode.jpg";
 const STEM_IMAGE_BASE_HEIGHT_RPX = 320;
 const STEM_IMAGE_DEFAULT_SCALE = 1.4;
 const STEM_IMAGE_MIN_SCALE = 0.1;
@@ -685,6 +685,18 @@ Page({
     wx.previewImage({
       current: src,
       urls: urls.length ? urls : [src],
+    });
+  },
+
+  previewAssistantQr() {
+    const src = normalizeString(this.data.assistantQrImage);
+    if (!src) {
+      return;
+    }
+    wx.previewImage({
+      current: src,
+      urls: [src],
+      showmenu: true,
     });
   },
 

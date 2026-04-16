@@ -84,7 +84,7 @@
     <view class="status-card" wx:if="{{mode === 'result' && submissionSummary}}">
       <view class="section-title">本次结果</view>
       <view class="result-headline">本次答对 {{submissionSummary.correctCount}} / {{submissionSummary.totalCount}} 题</view>
-      <view class="result-tip">详细答案可添加下方助手微信，也可以直接查看本次详情。</view>
+      <view class="result-tip">长按识别下方二维码，添加助手获取详细解析；也可以继续查看本次详情和做题记录。</view>
       <view class="result-grid">
         <view class="result-item">
           <view class="result-value">{{submissionSummary.correctCount}}</view>
@@ -100,11 +100,21 @@
         </view>
       </view>
       <view class="assistant-card">
+        <view class="assistant-badge">长按识别</view>
         <view class="assistant-copy">
-          <view class="assistant-title">获取详细答案</view>
-          <view class="assistant-subtitle">添加下面助手微信，获取更完整的题目解析。</view>
+          <view class="assistant-title">长按识别二维码，添加助手获取详细解析</view>
+          <view class="assistant-subtitle">支持直接在页面内长按识别，也可以点开大图后再长按，识别更稳。</view>
         </view>
-        <image class="assistant-qr" mode="aspectFit" src="{{assistantQrImage}}"></image>
+        <view class="assistant-qr-shell">
+          <image
+            class="assistant-qr"
+            mode="aspectFit"
+            src="{{assistantQrImage}}"
+            show-menu-by-longpress="{{true}}"
+            bindtap="previewAssistantQr"
+          ></image>
+        </view>
+        <view class="assistant-actions-hint">点击查看大图，长按即可识别二维码</view>
       </view>
       <button class="ghost-btn ghost-btn-full" bindtap="openCurrentSubmissionDetail" wx:if="{{activeSubmissionId}}">查看本次详情</button>
       <button class="ghost-btn ghost-btn-full" bindtap="openPracticeHistory">查看做题记录</button>

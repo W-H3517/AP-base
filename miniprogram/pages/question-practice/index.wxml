@@ -103,8 +103,7 @@
         <view class="assistant-badge">长按识别</view>
         <view class="assistant-copy">
           <view class="assistant-title">长按识别二维码，添加助手获取详细解析</view>
-          <view class="assistant-subtitle" wx:if="{{assistantQrConfigured}}">支持直接在页面内长按识别，也可以点开大图后再长按，识别更稳。</view>
-          <view class="assistant-subtitle" wx:else>二维码暂未配置，请联系管理员上传最新二维码后再识别。</view>
+          <view class="assistant-subtitle" wx:if="{{!assistantQrConfigured}}">二维码暂未配置，请联系管理员上传最新二维码后再识别。</view>
         </view>
         <view class="assistant-qr-shell" wx:if="{{assistantQrConfigured}}">
           <image

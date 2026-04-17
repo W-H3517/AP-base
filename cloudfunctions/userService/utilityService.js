@@ -16,6 +16,7 @@ const initCollections = async (event) => {
       `Ensure a unique index on ${collections.questions}.questionId in the cloud database console.`,
       `Ensure a unique index on ${collections.practiceSubmissions}.submissionId in the cloud database console.`,
       `Ensure an index on ${collections.practiceSubmissions}.openid in the cloud database console.`,
+      `Ensure a unique index on ${collections.assetConfigs}.assetKey in the cloud database console.`,
     ],
   });
 };

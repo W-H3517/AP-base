@@ -1,4 +1,5 @@
 const USER_CLOUD_FUNCTION_NAME = "userService";
+const ASSET_CLOUD_FUNCTION_NAME = "assetService";
 
 function getCloudEnv() {
   const app = getApp();
@@ -85,15 +86,21 @@ Page({
       role: "",
     },
     navMetrics: getNavigationMetrics(),
+    assistantQrImage: "",
+    assistantQrConfigured: false,
   },
 
   onLoad() {
     this.getCurrentUser();
+    this.loadAssistantQrConfig(false).catch(() => {});
   },
 
   onShow() {
     if (this.data.userLoaded) {
       this.getCurrentUser(false);
+    }
+    if (getCloudEnv()) {
+      this.loadAssistantQrConfig(false).catch(() => {});
     }
   },
 
@@ -109,6 +116,44 @@ Page({
     this.setData({
       showTip: false,
     });
+  },
+
+  async callAssetFunction(data) {
+    const resp = await wx.cloud.callFunction({
+      name: ASSET_CLOUD_FUNCTION_NAME,
+      data: {
+        ...(data || {}),
+        ...getRuntimeContext(),
+      },
+    });
+    return unwrapCloudResult(resp);
+  },
+
+  async loadAssistantQrConfig(showError = true) {
+    if (!getCloudEnv()) {
+      return null;
+    }
+    try {
+      const result = await this.callAssetFunction({
+        type: "getAssistantQrConfig",
+      });
+      const data = result && result.data && typeof result.data === "object" ? result.data : {};
+      const fileID = typeof data.fileID === "string" ? data.fileID.trim() : "";
+      this.setData({
+        assistantQrImage: fileID,
+        assistantQrConfigured: !!fileID,
+      });
+      return data;
+    } catch (err) {
+      this.setData({
+        assistantQrImage: "",
+        assistantQrConfigured: false,
+      });
+      if (showError) {
+        this.showCloudTip("加载二维码失败", getErrorMessage(err) || "请稍后重试。");
+      }
+      throw err;
+    }
   },
 
   async getCurrentUser(showLoading = true) {
@@ -286,6 +331,20 @@ Page({
   openPracticeHistory() {
     wx.navigateTo({
       url: "/pages/practice-history/index",
+    });
+  },
+
+  previewAssistantQr() {
+    const src = this.data.assistantQrConfigured
+      ? (typeof this.data.assistantQrImage === "string" ? this.data.assistantQrImage.trim() : "")
+      : "";
+    if (!src) {
+      return;
+    }
+    wx.previewImage({
+      current: src,
+      urls: [src],
+      showmenu: true,
     });
   },
 });

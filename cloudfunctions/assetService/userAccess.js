@@ -4,12 +4,13 @@ const {
   normalizeRuntimeDataVersion,
   resolveCollectionNames,
 } = require("./constants");
-const { ok, normalizeString } = require("./utils");
+const { normalizeString } = require("./utils");
 
 const ADMIN_OPENIDS = (process.env.ADMIN_OPENIDS || "")
   .split(",")
   .map((item) => item.trim())
   .filter(Boolean);
+const ensuredCollectionPromises = new Map();
 
 const normalizeRole = (role) => (role === "admin" ? "admin" : "user");
 
@@ -24,8 +25,8 @@ const ensureCollection = async (collectionName) => {
   try {
     await db.createCollection(collectionName);
   } catch (error) {
-    const errMsg = normalizeString(error?.message || String(error)).toLowerCase();
-    if (!errMsg.includes("collection")) {
+    const errMsg = normalizeString(error?.message || String(error));
+    if (!errMsg.toLowerCase().includes("collection")) {
       throw error;
     }
   }
@@ -33,12 +34,21 @@ const ensureCollection = async (collectionName) => {
 
 const ensureCollections = async (event) => {
   const collections = getCollections(event);
-  await Promise.all([
-    ensureCollection(collections.users),
-    ensureCollection(collections.questions),
-    ensureCollection(collections.practiceSubmissions),
-    ensureCollection(collections.assetConfigs),
-  ]);
+  const collectionNames = [
+    collections.users,
+    collections.assetConfigs,
+  ];
+
+  await Promise.all(collectionNames.map((collectionName) => {
+    if (!ensuredCollectionPromises.has(collectionName)) {
+      const promise = ensureCollection(collectionName).catch((error) => {
+        ensuredCollectionPromises.delete(collectionName);
+        throw error;
+      });
+      ensuredCollectionPromises.set(collectionName, promise);
+    }
+    return ensuredCollectionPromises.get(collectionName);
+  }));
 };
 
 const getUserByOpenId = async (openid, event) => {
@@ -117,30 +127,17 @@ const ensureUserRecord = async (event) => {
   return created;
 };
 
-const getOpenId = async () => {
-  const wxContext = getWxContext();
-  return ok({
-    openid: wxContext.OPENID,
-    appid: wxContext.APPID,
-    unionid: wxContext.UNIONID,
-  });
-};
-
-const getCurrentUser = async (event) => {
+const requireAdmin = async (event) => {
   const user = await ensureUserRecord(event);
-  return ok({
-    openid: user.openid,
-    role: normalizeRole(user.role),
-    createTime: user.createTime,
-    updateTime: user.updateTime,
-  });
+  if (normalizeRole(user.role) !== "admin") {
+    throw new Error("仅管理员可执行此操作");
+  }
+  return user;
 };
 
 module.exports = {
-  ensureCollections,
-  ensureUserRecord,
-  getOpenId,
   getRuntimeDataVersion,
   getCollections,
-  getCurrentUser,
+  ensureUserRecord,
+  requireAdmin,
 };

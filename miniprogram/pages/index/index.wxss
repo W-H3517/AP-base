@@ -89,7 +89,8 @@ page {
 
 .hero-card,
 .refresh-card,
-.admin-card {
+.admin-card,
+.assistant-card {
   width: 100%;
   border-radius: 28rpx;
   box-sizing: border-box;
@@ -242,7 +243,8 @@ page {
 }
 
 .refresh-card,
-.admin-card {
+.admin-card,
+.assistant-card {
   margin-top: 20rpx;
   padding: 28rpx;
   background: rgba(255, 255, 255, 0.92);
@@ -307,6 +309,76 @@ page {
 .mini-action-plain {
   background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
   color: #0f172a;
+}
+
+.assistant-card {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(145deg, #eff8ff 0%, #ffffff 42%, #ecfeff 100%);
+  border: 1rpx solid rgba(125, 211, 252, 0.35);
+  box-shadow: 0 24rpx 52rpx rgba(14, 116, 144, 0.12);
+}
+
+.assistant-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 10rpx 18rpx;
+  border-radius: 999rpx;
+  background: rgba(14, 116, 144, 0.1);
+  color: #0f766e;
+  font-size: 22rpx;
+  font-weight: 600;
+}
+
+.assistant-title {
+  margin-top: 18rpx;
+  font-size: 38rpx;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.35;
+}
+
+.assistant-subtitle {
+  margin-top: 14rpx;
+  font-size: 25rpx;
+  line-height: 1.8;
+  color: #64748b;
+}
+
+.assistant-qr-shell {
+  margin-top: 26rpx;
+  padding: 24rpx;
+  border-radius: 32rpx;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.9), 0 16rpx 36rpx rgba(15, 23, 42, 0.08);
+}
+
+.assistant-qr {
+  width: 100%;
+  height: 560rpx;
+  display: block;
+  border-radius: 28rpx;
+  background: #ffffff;
+}
+
+.assistant-placeholder {
+  margin-top: 26rpx;
+  padding: 72rpx 24rpx;
+  border-radius: 32rpx;
+  border: 1rpx dashed rgba(15, 118, 110, 0.28);
+  background: rgba(255, 255, 255, 0.72);
+  text-align: center;
+  font-size: 30rpx;
+  line-height: 1.7;
+  color: #64748b;
+}
+
+.assistant-actions-hint {
+  margin-top: 18rpx;
+  text-align: center;
+  font-size: 24rpx;
+  line-height: 1.7;
+  color: #0f766e;
 }
 
 @media (max-width: 480px) {

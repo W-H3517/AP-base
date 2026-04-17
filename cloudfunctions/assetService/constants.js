@@ -1,7 +1,7 @@
 const USERS_COLLECTION = "users";
-const QUESTIONS_COLLECTION = "questions";
-const PRACTICE_SUBMISSIONS_COLLECTION = "practice_submissions";
 const ASSET_CONFIGS_COLLECTION = "asset_configs";
+
+const ASSET_KEY_ASSISTANT_QR = "assistant_qr";
 
 const normalizeRuntimeDataVersion = (value) =>
   String(value || "").trim().toLowerCase() === "develop" ? "develop" : "trial";
@@ -10,17 +10,12 @@ const resolveCollectionNames = (runtimeDataVersion) => {
   const suffix = normalizeRuntimeDataVersion(runtimeDataVersion) === "develop" ? "_dev" : "_trial";
   return {
     users: `${USERS_COLLECTION}${suffix}`,
-    questions: `${QUESTIONS_COLLECTION}${suffix}`,
-    practiceSubmissions: `${PRACTICE_SUBMISSIONS_COLLECTION}${suffix}`,
     assetConfigs: `${ASSET_CONFIGS_COLLECTION}${suffix}`,
   };
 };
 
 module.exports = {
-  USERS_COLLECTION,
-  QUESTIONS_COLLECTION,
-  PRACTICE_SUBMISSIONS_COLLECTION,
-  ASSET_CONFIGS_COLLECTION,
+  ASSET_KEY_ASSISTANT_QR,
   normalizeRuntimeDataVersion,
   resolveCollectionNames,
 };

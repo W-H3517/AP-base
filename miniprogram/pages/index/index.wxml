@@ -19,7 +19,6 @@
         <view class="hero-copy">
           <view class="hero-kicker">Practice Portal</view>
           <view class="hero-title">AP题库答题系统</view>
-          <view class="hero-subtitle">首页只保留核心入口，专注开始答题与回看记录。</view>
         </view>
       </view>
 
@@ -57,6 +56,26 @@
         <view class="mini-action" bindtap="openAssistantQrAdmin">二维码管理</view>
         <view class="mini-action mini-action-plain" bindtap="initCollections">初始化集合</view>
       </view>
+    </view>
+
+    <view class="assistant-card">
+      <view class="assistant-badge">长按识别</view>
+      <view class="assistant-copy">
+        <view class="assistant-title">添加助手，获取详细解析</view>
+        <view class="assistant-subtitle" wx:if="{{!assistantQrConfigured}}">二维码暂未配置，请联系管理员上传最新二维码后再识别。</view>
+      </view>
+      <view class="assistant-qr-shell" wx:if="{{assistantQrConfigured}}">
+        <image
+          class="assistant-qr"
+          mode="aspectFit"
+          src="{{assistantQrImage}}"
+          show-menu-by-longpress="{{true}}"
+          bindtap="previewAssistantQr"
+        ></image>
+      </view>
+      <view class="assistant-placeholder" wx:else>二维码暂未配置</view>
+      <view class="assistant-actions-hint" wx:if="{{assistantQrConfigured}}">点击查看大图，长按即可识别二维码</view>
+      <view class="assistant-actions-hint" wx:else>管理员上传后，这里会自动显示最新二维码</view>
     </view>
   </view>
 

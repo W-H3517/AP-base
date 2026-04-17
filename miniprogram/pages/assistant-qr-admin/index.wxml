@@ -1,0 +1,60 @@
+<view class="page-shell">
+  <view class="custom-nav" style="padding-top: {{navMetrics.statusBarHeight}}px;">
+    <view class="custom-nav-inner">
+      <view class="custom-nav-main">
+        <view class="nav-icon-btn" bindtap="goBack" aria-label="返回">
+          <view class="nav-triangle-left"></view>
+        </view>
+        <view class="nav-icon-btn" bindtap="goHome" aria-label="回到首页">
+          <view class="nav-home-icon">
+            <view class="nav-home-roof"></view>
+            <view class="nav-home-body"></view>
+          </view>
+        </view>
+        <view class="custom-nav-caption">二维码管理</view>
+      </view>
+      <view class="custom-nav-space" style="width: {{navMetrics.capsuleWidth}}px;"></view>
+    </view>
+  </view>
+
+  <view class="page-body" style="padding-top: {{navMetrics.totalHeight + 20}}px;">
+    <view class="ambient ambient-left"></view>
+    <view class="ambient ambient-right"></view>
+    <view class="ambient ambient-bottom"></view>
+
+    <view class="hero-card">
+      <view class="hero-kicker">Assistant QR</view>
+      <view class="hero-title">管理员手动替换结果页二维码</view>
+      <view class="hero-subtitle">当前策略是先删除旧图，再上传新图。删除后如果暂未上传，结果页会显示未配置占位提示。</view>
+    </view>
+
+    <view class="status-card">
+      <view class="section-title">当前状态</view>
+      <view class="status-meta">
+        <view class="status-item">
+          <view class="status-label">配置状态</view>
+          <view class="status-value">{{qrConfig.hasConfigured ? '已配置' : '未配置'}}</view>
+        </view>
+        <view class="status-item">
+          <view class="status-label">更新时间</view>
+          <view class="status-value">{{qrConfig.updatedAtText || '暂无'}}</view>
+        </view>
+      </view>
+      <view class="status-path">固定云路径：{{qrConfig.cloudPath}}</view>
+      <view class="qr-preview-shell" wx:if="{{qrConfig.hasConfigured}}">
+        <image class="qr-preview" mode="aspectFit" src="{{qrConfig.fileID}}" bindtap="previewCurrentQr"></image>
+      </view>
+      <view class="empty-state" wx:else>当前未配置二维码，请先上传新的图片。</view>
+    </view>
+
+    <view class="action-card">
+      <view class="section-title">管理动作</view>
+      <view class="action-tip">请按顺序操作：先删除旧二维码，再上传新的二维码图片并保存。</view>
+      <button class="ghost-btn ghost-btn-full warn-btn" bindtap="deleteCurrentQr" loading="{{deletingQr}}" disabled="{{!qrConfig.hasConfigured || savingQr || deletingQr}}">删除当前二维码</button>
+      <button class="ghost-btn ghost-btn-full primary-btn" bindtap="uploadNewQr" loading="{{savingQr}}" disabled="{{qrConfig.hasConfigured || savingQr || deletingQr}}">上传并保存新二维码</button>
+      <button class="ghost-btn ghost-btn-full" bindtap="loadQrConfig" loading="{{loadingConfig}}" disabled="{{savingQr || deletingQr}}">刷新状态</button>
+    </view>
+  </view>
+
+  <cloud-tip-modal showTipProps="{{showTip}}" title="{{title}}" content="{{content}}" bindclose="hideCloudTip"></cloud-tip-modal>
+</view>

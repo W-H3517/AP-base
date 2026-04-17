@@ -103,9 +103,10 @@
         <view class="assistant-badge">长按识别</view>
         <view class="assistant-copy">
           <view class="assistant-title">长按识别二维码，添加助手获取详细解析</view>
-          <view class="assistant-subtitle">支持直接在页面内长按识别，也可以点开大图后再长按，识别更稳。</view>
+          <view class="assistant-subtitle" wx:if="{{assistantQrConfigured}}">支持直接在页面内长按识别，也可以点开大图后再长按，识别更稳。</view>
+          <view class="assistant-subtitle" wx:else>二维码暂未配置，请联系管理员上传最新二维码后再识别。</view>
         </view>
-        <view class="assistant-qr-shell">
+        <view class="assistant-qr-shell" wx:if="{{assistantQrConfigured}}">
           <image
             class="assistant-qr"
             mode="aspectFit"
@@ -114,7 +115,9 @@
             bindtap="previewAssistantQr"
           ></image>
         </view>
-        <view class="assistant-actions-hint">点击查看大图，长按即可识别二维码</view>
+        <view class="assistant-placeholder" wx:else>二维码暂未配置</view>
+        <view class="assistant-actions-hint" wx:if="{{assistantQrConfigured}}">点击查看大图，长按即可识别二维码</view>
+        <view class="assistant-actions-hint" wx:else>管理员删除旧图并上传新图后，这里会自动显示最新二维码</view>
       </view>
       <button class="ghost-btn ghost-btn-full" bindtap="openCurrentSubmissionDetail" wx:if="{{activeSubmissionId}}">查看本次详情</button>
       <button class="ghost-btn ghost-btn-full" bindtap="openPracticeHistory">查看做题记录</button>

@@ -1,6 +1,6 @@
 const QUESTION_CLOUD_FUNCTION_NAME = "questionService";
 const USER_CLOUD_FUNCTION_NAME = "userService";
-const ASSISTANT_QR_IMAGE = "/images/assistant-qrcode.jpg";
+const ASSET_CLOUD_FUNCTION_NAME = "assetService";
 const STEM_IMAGE_BASE_HEIGHT_RPX = 320;
 const STEM_IMAGE_DEFAULT_SCALE = 1.4;
 const STEM_IMAGE_MIN_SCALE = 0.1;
@@ -244,7 +244,8 @@ Page({
     reviewQuestionResultsMap: {},
     activeSubmissionId: "",
     submissionSummary: null,
-    assistantQrImage: ASSISTANT_QR_IMAGE,
+    assistantQrImage: "",
+    assistantQrConfigured: false,
     stemImageScale: STEM_IMAGE_DEFAULT_SCALE,
     stemImageScalePercent: Math.round(STEM_IMAGE_DEFAULT_SCALE * 100),
     stemImageHeightRpx: Math.round(STEM_IMAGE_BASE_HEIGHT_RPX * STEM_IMAGE_DEFAULT_SCALE),
@@ -264,6 +265,12 @@ Page({
       },
     });
     this.loadInitialData();
+  },
+
+  onShow() {
+    if (getCloudEnv()) {
+      this.loadAssistantQrConfig(false).catch(() => {});
+    }
   },
 
   onUnload() {
@@ -331,6 +338,7 @@ Page({
         }),
         this.loadPracticePaper(),
       ]);
+      await this.loadAssistantQrConfig(false).catch(() => {});
       this.setData({
         loadingUser: false,
         userLoaded: true,
@@ -375,6 +383,30 @@ Page({
         loadingUser: false,
       });
       this.showCloudTip("用户同步失败", getErrorMessage(error));
+    }
+  },
+
+  async loadAssistantQrConfig(showError = true) {
+    try {
+      const result = await this.callFunction(ASSET_CLOUD_FUNCTION_NAME, {
+        type: "getAssistantQrConfig",
+      });
+      const data = isPlainObject(result.data) ? result.data : {};
+      const fileID = normalizeString(data.fileID);
+      this.setData({
+        assistantQrImage: fileID,
+        assistantQrConfigured: !!fileID,
+      });
+      return data;
+    } catch (error) {
+      this.setData({
+        assistantQrImage: "",
+        assistantQrConfigured: false,
+      });
+      if (showError) {
+        this.showCloudTip("二维码加载失败", getErrorMessage(error));
+      }
+      throw error;
     }
   },
 
@@ -689,7 +721,7 @@ Page({
   },
 
   previewAssistantQr() {
-    const src = normalizeString(this.data.assistantQrImage);
+    const src = this.data.assistantQrConfigured ? normalizeString(this.data.assistantQrImage) : "";
     if (!src) {
       return;
     }

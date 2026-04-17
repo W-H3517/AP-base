@@ -54,6 +54,7 @@
       <view class="section-title">管理入口</view>
       <view class="admin-actions">
         <view class="mini-action" bindtap="openQuestionAdmin">题目管理</view>
+        <view class="mini-action" bindtap="openAssistantQrAdmin">二维码管理</view>
         <view class="mini-action mini-action-plain" bindtap="initCollections">初始化集合</view>
       </view>
     </view>

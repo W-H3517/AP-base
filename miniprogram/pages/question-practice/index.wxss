@@ -376,6 +376,18 @@ page {
   color: #0f766e;
 }
 
+.assistant-placeholder {
+  margin-top: 26rpx;
+  padding: 72rpx 24rpx;
+  border-radius: 32rpx;
+  border: 1rpx dashed rgba(15, 118, 110, 0.28);
+  background: rgba(255, 255, 255, 0.72);
+  text-align: center;
+  font-size: 30rpx;
+  line-height: 1.7;
+  color: #64748b;
+}
+
 .progress-row {
   display: flex;
   flex-wrap: wrap;

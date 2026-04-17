@@ -1,6 +1,7 @@
 {
   "pages": [
     "pages/index/index",
+    "pages/assistant-qr-admin/index",
     "pages/question-bank/index",
     "pages/question-practice/index",
     "pages/practice-history/index",

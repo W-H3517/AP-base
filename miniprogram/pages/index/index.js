@@ -272,6 +272,17 @@ Page({
     });
   },
 
+  openAssistantQrAdmin() {
+    if (!this.data.isAdmin) {
+      this.showCloudTip("权限不足", "当前用户不是管理员，不能进入二维码管理页。");
+      return;
+    }
+
+    wx.navigateTo({
+      url: "/pages/assistant-qr-admin/index",
+    });
+  },
+
   openPracticeHistory() {
     wx.navigateTo({
       url: "/pages/practice-history/index",

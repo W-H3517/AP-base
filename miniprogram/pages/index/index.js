@@ -91,8 +91,18 @@ Page({
   },
 
   onLoad() {
+    wx.showShareMenu({
+      menus: ["shareAppMessage"],
+    });
     this.getCurrentUser();
     this.loadAssistantQrConfig(false).catch(() => {});
+  },
+
+  onShareAppMessage() {
+    return {
+      title: "X-New AP物理选择题",
+      path: "/pages/index/index",
+    };
   },
 
   onShow() {

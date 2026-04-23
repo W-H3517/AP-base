@@ -90,7 +90,11 @@ page {
 .hero-card,
 .refresh-card,
 .admin-card,
-.assistant-card {
+.assistant-card,
+.share-cta-card,
+.question-card,
+.loading-state,
+.empty-state {
   width: 100%;
   border-radius: 28rpx;
   box-sizing: border-box;
@@ -147,14 +151,6 @@ page {
   line-height: 1.1;
   font-weight: 700;
   letter-spacing: -1.5rpx;
-}
-
-.hero-subtitle {
-  margin-top: 18rpx;
-  max-width: 560rpx;
-  font-size: 28rpx;
-  line-height: 1.65;
-  color: #64748b;
 }
 
 .action-stack {
@@ -244,7 +240,11 @@ page {
 
 .refresh-card,
 .admin-card,
-.assistant-card {
+.assistant-card,
+.share-cta-card,
+.question-card,
+.loading-state,
+.empty-state {
   margin-top: 20rpx;
   padding: 28rpx;
   background: rgba(255, 255, 255, 0.92);
@@ -379,6 +379,216 @@ page {
   font-size: 24rpx;
   line-height: 1.7;
   color: #0f766e;
+}
+
+.share-cta-text,
+.loading-state,
+.empty-state {
+  margin-top: 14rpx;
+  font-size: 25rpx;
+  line-height: 1.8;
+  color: #64748b;
+}
+
+.share-cta-title {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.question-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-bottom: 24rpx;
+}
+
+.progress-badge,
+.question-tag,
+.chip {
+  padding: 10rpx 18rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+}
+
+.progress-badge {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.question-tag {
+  background: #ecfccb;
+  color: #3f6212;
+}
+
+.image-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.stem-image-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16rpx;
+  flex-wrap: wrap;
+}
+
+.stem-scroll-hint {
+  font-size: 22rpx;
+  color: #64748b;
+}
+
+.stem-zoom-actions {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.stem-zoom-btn,
+.stem-zoom-reset {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52rpx;
+  height: 52rpx;
+  padding: 0 16rpx;
+  border-radius: 999rpx;
+  background: #e2e8f0;
+  color: #0f172a;
+  font-size: 24rpx;
+  font-weight: 600;
+  box-sizing: border-box;
+}
+
+.stem-zoom-reset {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.stem-zoom-value {
+  min-width: 88rpx;
+  text-align: center;
+  font-size: 22rpx;
+  color: #334155;
+}
+
+.stem-image-scroll {
+  width: 100%;
+  white-space: nowrap;
+  border-radius: 22rpx;
+  background: #f8fafc;
+  padding-bottom: 12rpx;
+  box-sizing: border-box;
+}
+
+.stem-content-image {
+  min-width: 100%;
+  border-radius: 22rpx;
+  background: #f8fafc;
+}
+
+.stem-card,
+.option-card {
+  border-radius: 22rpx;
+  background: #f8fafc;
+}
+
+.stem-card {
+  padding: 24rpx;
+  font-size: 30rpx;
+  line-height: 1.8;
+  color: #0f172a;
+}
+
+.section-title {
+  margin: 24rpx 0 16rpx;
+}
+
+.option-list {
+  margin-top: 18rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.option-card {
+  padding: 22rpx;
+  border: 2rpx solid transparent;
+}
+
+.option-card-preview {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.option-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12rpx;
+}
+
+.option-key {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.option-state {
+  font-size: 22rpx;
+  color: #16a34a;
+}
+
+.option-state-preview {
+  color: #64748b;
+}
+
+.option-text {
+  font-size: 28rpx;
+  line-height: 1.8;
+  color: #334155;
+}
+
+.option-image,
+.grouped-image {
+  width: 100%;
+  border-radius: 22rpx;
+  overflow: hidden;
+  background: #f8fafc;
+}
+
+.placeholder-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  font-size: 24rpx;
+  line-height: 1.6;
+  border: 1rpx dashed rgba(148, 163, 184, 0.55);
+  box-sizing: border-box;
+}
+
+.option-image-placeholder,
+.grouped-image-placeholder {
+  min-height: 220rpx;
+}
+
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+  margin-top: 20rpx;
+}
+
+.chip {
+  background: #e2e8f0;
+  color: #334155;
 }
 
 @media (max-width: 480px) {

@@ -1,11 +1,11 @@
 <view class="page-shell">
   <view class="custom-nav" style="padding-top: {{navMetrics.statusBarHeight}}px;">
-      <view class="custom-nav-inner">
-        <view class="custom-nav-main">
-          <view class="custom-nav-caption">X-New AP物理选择题答题工具</view>
-        </view>
-        <view class="custom-nav-space" style="width: {{navMetrics.capsuleWidth}}px;"></view>
+    <view class="custom-nav-inner">
+      <view class="custom-nav-main">
+        <view class="custom-nav-caption">{{pageMode === 'timeline-share' ? '朋友圈分享页' : 'X-New AP物理选择题答题工具'}}</view>
       </view>
+      <view class="custom-nav-space" style="width: {{navMetrics.capsuleWidth}}px;"></view>
+    </view>
   </view>
 
   <view class="page-body" style="padding-top: {{navMetrics.totalHeight + 20}}px;">
@@ -13,69 +13,206 @@
     <view class="ambient ambient-right"></view>
     <view class="ambient ambient-bottom"></view>
 
-    <view class="hero-card">
-      <view class="hero-shine"></view>
-      <view class="hero-top">
-        <view class="hero-copy">
-          <view class="hero-kicker">Practice Portal</view>
-          <view class="hero-title">AP物理选择题题库</view>
-        </view>
-      </view>
-
-      <view class="action-stack">
-        <view class="action-card action-card-primary" bindtap="openQuestionBrowser">
-          <view class="action-card-meta">
-            <view class="action-card-kicker">Practice</view>
-            <view class="action-card-index">01</view>
+    <block wx:if="{{pageMode === 'timeline-share'}}">
+      <view class="hero-card">
+        <view class="hero-shine"></view>
+        <view class="hero-top">
+          <view class="hero-copy">
+            <view class="hero-kicker">AP Physics</view>
+            <view class="hero-title">{{sharePageTitle}}</view>
           </view>
-          <view class="action-card-title">在线答题</view>
-          <view class="action-card-tip">逐题作答，交卷后立即进入回顾模式</view>
-          <view class="action-card-arrow">开始</view>
         </view>
-        <view class="action-card action-card-secondary" bindtap="openPracticeHistory">
-          <view class="action-card-meta">
-            <view class="action-card-kicker">History</view>
-            <view class="action-card-index">02</view>
+      </view>
+
+      <view class="loading-state" wx:if="{{loadingShareQuestion}}">
+        正在准备示例题，请稍候...
+      </view>
+
+      <view class="empty-state" wx:if="{{!loadingShareQuestion && !shareQuestion}}">
+        当前暂时没有可展示的示例题，请稍后再试。
+      </view>
+
+      <view class="question-card" wx:if="{{shareQuestion}}">
+        <view class="progress-row">
+          <view class="progress-badge">示例题</view>
+          <view class="question-tag" wx:if="{{shareQuestion.questionLabel}}">{{shareQuestion.questionLabel}}</view>
+          <view class="question-tag" wx:if="{{shareQuestion.entryMode === 'grouped'}}">题组第 {{shareQuestion.groupOrder}} 题</view>
+          <view class="question-tag" wx:if="{{shareQuestion.optionMode === 'grouped_asset'}}">大图选项</view>
+          <view class="question-tag" wx:if="{{shareQuestion.optionMode === 'per_option'}}">独立选项</view>
+        </view>
+
+        <view class="section-title" wx:if="{{shareQuestion.sharedStemVisible}}">公共题干</view>
+        <view class="image-list" wx:if="{{shareQuestion.sharedStemVisible && shareQuestion.sharedStem.imageAssets.length}}">
+          <view class="stem-image-toolbar">
+            <view class="stem-scroll-hint">左右拖动查看完整题干</view>
+            <view class="stem-zoom-actions">
+              <view class="stem-zoom-btn" bindtap="zoomOutStemImage">-</view>
+              <view class="stem-zoom-value">{{stemImageScalePercent}}%</view>
+              <view class="stem-zoom-btn" bindtap="zoomInStemImage">+</view>
+              <view class="stem-zoom-reset" bindtap="resetStemImageScale">重置</view>
+            </view>
           </view>
-          <view class="action-card-title">做题记录</view>
-          <view class="action-card-tip">查看历史提交时间、分数摘要和逐题详情</view>
-          <view class="action-card-arrow action-card-arrow-secondary">查看</view>
+          <scroll-view wx:for="{{shareQuestion.sharedStem.imageAssets}}" wx:key="fileId" class="stem-image-scroll" scroll-x enhanced show-scrollbar="true">
+            <image wx:if="{{item.src}}" class="stem-content-image" style="height: {{stemImageHeightRpx}}rpx;" mode="heightFix" src="{{item.src}}" bindtap="previewImage" data-src="{{item.src}}"></image>
+            <view wx:else class="stem-content-image placeholder-image" style="height: {{stemImageHeightRpx}}rpx;">图片加载中...</view>
+          </scroll-view>
+        </view>
+        <view class="stem-card" wx:if="{{shareQuestion.sharedStemVisible && shareQuestion.sharedStem.text}}">
+          <mp-html
+            wx:if="{{!shareQuestion.sharedStem.renderAsPlainText}}"
+            content="{{shareQuestion.sharedStem.renderedContent}}"
+            markdown="{{true}}"
+            container-style="{{stemMarkdownContainerStyle}}"
+            tag-style="{{stemMarkdownTagStyle}}"
+            preview-img="{{false}}"
+            selectable="{{true}}"
+            data-scope="sharedStem"
+            binderror="onRichTextError"
+          />
+          <view wx:else>{{shareQuestion.sharedStem.text}}</view>
+        </view>
+
+        <view class="section-title">题目</view>
+        <view class="image-list" wx:if="{{shareQuestion.stem.imageAssets.length}}">
+          <view class="stem-image-toolbar">
+            <view class="stem-scroll-hint">左右拖动查看完整题干</view>
+            <view class="stem-zoom-actions">
+              <view class="stem-zoom-btn" bindtap="zoomOutStemImage">-</view>
+              <view class="stem-zoom-value">{{stemImageScalePercent}}%</view>
+              <view class="stem-zoom-btn" bindtap="zoomInStemImage">+</view>
+              <view class="stem-zoom-reset" bindtap="resetStemImageScale">重置</view>
+            </view>
+          </view>
+          <scroll-view wx:for="{{shareQuestion.stem.imageAssets}}" wx:key="fileId" class="stem-image-scroll" scroll-x enhanced show-scrollbar="true">
+            <image wx:if="{{item.src}}" class="stem-content-image" style="height: {{stemImageHeightRpx}}rpx;" mode="heightFix" src="{{item.src}}" bindtap="previewImage" data-src="{{item.src}}"></image>
+            <view wx:else class="stem-content-image placeholder-image" style="height: {{stemImageHeightRpx}}rpx;">图片加载中...</view>
+          </scroll-view>
+        </view>
+        <view class="stem-card" wx:if="{{shareQuestion.stem.text}}">
+          <mp-html
+            wx:if="{{!shareQuestion.stem.renderAsPlainText}}"
+            content="{{shareQuestion.stem.renderedContent}}"
+            markdown="{{true}}"
+            container-style="{{stemMarkdownContainerStyle}}"
+            tag-style="{{stemMarkdownTagStyle}}"
+            preview-img="{{false}}"
+            selectable="{{true}}"
+            data-scope="stem"
+            binderror="onRichTextError"
+          />
+          <view wx:else>{{shareQuestion.stem.text}}</view>
+        </view>
+
+        <view class="section-title">选项预览</view>
+
+        <view wx:if="{{shareQuestion.optionMode === 'per_option'}}" class="option-list">
+          <view class="option-card option-card-preview" wx:for="{{shareQuestion.options.items}}" wx:key="key" wx:for-item="item">
+            <view class="option-top">
+              <view class="option-key">{{item.key}}</view>
+              <view class="option-state option-state-preview">示例选项</view>
+            </view>
+            <view wx:if="{{item.sourceType === 'text'}}" class="option-text">
+              <mp-html
+                wx:if="{{!item.renderAsPlainText}}"
+                content="{{item.renderedContent}}"
+                markdown="{{true}}"
+                container-style="{{optionMarkdownContainerStyle}}"
+                tag-style="{{optionMarkdownTagStyle}}"
+                preview-img="{{false}}"
+                selectable="{{true}}"
+                data-scope="option"
+                data-option-key="{{item.key}}"
+                binderror="onRichTextError"
+              />
+              <view wx:else>{{item.text}}</view>
+            </view>
+            <image wx:if="{{item.sourceType === 'image' && item.imageAsset.src}}" class="option-image" mode="widthFix" src="{{item.imageAsset.src}}" catchtap="previewImage" data-src="{{item.imageAsset.src}}"></image>
+            <view wx:elif="{{item.sourceType === 'image' && item.imageFileId}}" class="option-image placeholder-image option-image-placeholder">图片加载中...</view>
+          </view>
+        </view>
+
+        <view wx:if="{{shareQuestion.optionMode === 'grouped_asset'}}">
+          <image wx:if="{{shareQuestion.options.groupedAsset.imageAsset.src}}" class="grouped-image" mode="widthFix" src="{{shareQuestion.options.groupedAsset.imageAsset.src}}" bindtap="previewImage" data-src="{{shareQuestion.options.groupedAsset.imageAsset.src}}"></image>
+          <view wx:elif="{{shareQuestion.options.groupedAsset.imageFileId}}" class="grouped-image placeholder-image grouped-image-placeholder">图片加载中...</view>
+          <view class="chip-list">
+            <view class="chip" wx:for="{{shareQuestion.optionKeysForDisplay}}" wx:key="key">
+              {{item.key}}
+            </view>
+          </view>
         </view>
       </view>
-    </view>
 
-    <view class="refresh-card">
-      <view class="refresh-card-label">同步入口</view>
-      <button class="ghost-btn ghost-btn-full" bindtap="getCurrentUser" loading="{{loadingUser}}">刷新</button>
-    </view>
+      <view class="share-cta-card">
+        <view class="share-cta-title">继续体验更多功能</view>
+        <view class="share-cta-text">请点击微信页面底部官方的“前往小程序”按钮，进入完整首页后继续浏览题库、开始答题或查看历史记录。</view>
+      </view>
+    </block>
 
-    <view class="admin-card" wx:if="{{isAdmin}}">
-      <view class="section-title">管理入口</view>
-      <view class="admin-actions">
-        <view class="mini-action" bindtap="openQuestionAdmin">题目管理</view>
-        <view class="mini-action" bindtap="openAssistantQrAdmin">二维码管理</view>
-      </view>
-    </view>
+    <block wx:else>
+      <view class="hero-card">
+        <view class="hero-shine"></view>
+        <view class="hero-top">
+          <view class="hero-copy">
+            <view class="hero-kicker">Practice Portal</view>
+            <view class="hero-title">AP物理选择题题库</view>
+          </view>
+        </view>
 
-    <view class="assistant-card">
-      <view class="assistant-badge">长按识别</view>
-      <view class="assistant-copy">
-        <view class="assistant-title">添加助手，获取详细解析</view>
-        <view class="assistant-subtitle" wx:if="{{!assistantQrConfigured}}">二维码暂未配置，请联系管理员上传最新二维码后再识别。</view>
+        <view class="action-stack">
+          <view class="action-card action-card-primary" bindtap="openQuestionBrowser">
+            <view class="action-card-meta">
+              <view class="action-card-kicker">Practice</view>
+              <view class="action-card-index">01</view>
+            </view>
+            <view class="action-card-title">在线答题</view>
+            <view class="action-card-tip">逐题作答，交卷后立即进入回顾模式</view>
+            <view class="action-card-arrow">开始</view>
+          </view>
+          <view class="action-card action-card-secondary" bindtap="openPracticeHistory">
+            <view class="action-card-meta">
+              <view class="action-card-kicker">History</view>
+              <view class="action-card-index">02</view>
+            </view>
+            <view class="action-card-title">做题记录</view>
+            <view class="action-card-tip">查看历史提交时间、分数摘要和逐题详情</view>
+            <view class="action-card-arrow action-card-arrow-secondary">查看</view>
+          </view>
+        </view>
       </view>
-      <view class="assistant-qr-shell" wx:if="{{assistantQrConfigured}}">
-        <image
-          class="assistant-qr"
-          mode="aspectFit"
-          src="{{assistantQrImage}}"
-          show-menu-by-longpress="{{true}}"
-          bindtap="previewAssistantQr"
-        ></image>
+
+      <view class="refresh-card">
+        <view class="refresh-card-label">同步入口</view>
+        <button class="ghost-btn ghost-btn-full" bindtap="getCurrentUser" loading="{{loadingUser}}">刷新</button>
       </view>
-      <view class="assistant-placeholder" wx:else>二维码暂未配置</view>
-      <view class="assistant-actions-hint" wx:if="{{assistantQrConfigured}}">点击查看大图，长按即可识别二维码</view>
-      <view class="assistant-actions-hint" wx:else>管理员上传后，这里会自动显示最新二维码</view>
-    </view>
+
+      <view class="admin-card" wx:if="{{isAdmin}}">
+        <view class="section-title">管理入口</view>
+        <view class="admin-actions">
+          <view class="mini-action" bindtap="openQuestionAdmin">题目管理</view>
+          <view class="mini-action" bindtap="openAssistantQrAdmin">二维码管理</view>
+        </view>
+      </view>
+
+      <view class="assistant-card">
+        <view class="assistant-badge">长按识别</view>
+        <view class="assistant-copy">
+          <view class="assistant-title">添加助手，获取详细解析</view>
+          <view class="assistant-subtitle" wx:if="{{!assistantQrConfigured}}">二维码暂未配置，请联系管理员上传最新二维码后再识别。</view>
+        </view>
+        <view class="assistant-qr-shell" wx:if="{{assistantQrConfigured}}">
+          <image
+            class="assistant-qr"
+            mode="aspectFit"
+            src="{{assistantQrImage}}"
+            show-menu-by-longpress="{{true}}"
+            bindtap="previewAssistantQr"
+          ></image>
+        </view>
+        <view class="assistant-placeholder" wx:else>二维码暂未配置</view>
+        <view class="assistant-actions-hint" wx:if="{{assistantQrConfigured}}">点击查看大图，长按即可识别二维码</view>
+        <view class="assistant-actions-hint" wx:else>管理员上传后，这里会自动显示最新二维码</view>
+      </view>
+    </block>
   </view>
 
   <cloud-tip-modal showTipProps="{{showTip}}" title="{{title}}" content="{{content}}" bindclose="hideCloudTip"></cloud-tip-modal>
